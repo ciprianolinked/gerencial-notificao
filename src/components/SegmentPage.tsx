@@ -2,7 +2,9 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { condominioDocumentos, condominios, documentosEmitidos, modelosPadrao } from "@/db/schema";
 import { ehUuid } from "@/lib/api";
+import { verificarBanco } from "@/lib/banco";
 import { getIaConfig } from "@/lib/config";
+import { BancoIndisponivel } from "./BancoIndisponivel";
 import { dataPorExtenso } from "@/lib/format";
 import { modeloFabrica, resolverModelo } from "@/lib/modelos";
 import type { StatusDoc, TipoDoc } from "@/lib/types";
@@ -22,6 +24,9 @@ export async function SegmentPage({
   const sp = await searchParams;
   const idParam = typeof sp.id === "string" && ehUuid(sp.id) ? sp.id : null;
   const hoje = dataPorExtenso();
+
+  const banco = await verificarBanco();
+  if (!banco.ok) return <BancoIndisponivel status={banco} />;
 
   const [condos, modeloRow, salvos, selecionado, ia, [{ totalDocs }]] = await Promise.all([
     db

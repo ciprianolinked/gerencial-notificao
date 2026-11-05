@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
+import { BancoIndisponivel } from "@/components/BancoIndisponivel";
 import { Hero } from "@/components/Hero";
 import { IaForm } from "@/components/IaForm";
+import { verificarBanco } from "@/lib/banco";
 import { getIaConfig, mascararChave } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Configurar IA · Gerencial" };
 
 export default async function ConfiguracoesPage() {
+  const banco = await verificarBanco();
+  if (!banco.ok) return <BancoIndisponivel status={banco} />;
+
   const cfg = await getIaConfig();
 
   return (

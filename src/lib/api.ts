@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { descreverErroBanco, ehErroDeBanco } from "./banco";
 import { IaError } from "./gemini";
 
 export function erro(mensagem: string, status = 400) {
@@ -7,6 +8,11 @@ export function erro(mensagem: string, status = 400) {
 
 export function erroDeExcecao(e: unknown) {
   if (e instanceof IaError) return erro(e.message, e.status);
+  if (ehErroDeBanco(e)) {
+    const d = descreverErroBanco(e);
+    console.error("[banco]", e);
+    return erro(`${d.titulo}. ${d.acao} Veja o guia em /guia-publicacao.`, 503);
+  }
   console.error(e);
   return erro("Ocorreu um erro inesperado. Tente novamente.", 500);
 }

@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { condominioDocumentos, condominios, documentosEmitidos } from "@/db/schema";
+import { BancoIndisponivel } from "@/components/BancoIndisponivel";
 import { CondominioForm } from "@/components/CondominioForm";
+import { verificarBanco } from "@/lib/banco";
 import { DocumentosManager } from "@/components/DocumentosManager";
 import { Hero } from "@/components/Hero";
 import { TipoBadge } from "@/components/TipoBadge";
@@ -19,6 +21,9 @@ export const metadata: Metadata = { title: "Condomínio · Gerencial" };
 export default async function CondominioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!ehUuid(id)) notFound();
+
+  const banco = await verificarBanco();
+  if (!banco.ok) return <BancoIndisponivel status={banco} />;
 
   const [condo] = await db
     .select({
@@ -103,6 +108,7 @@ export default async function CondominioPage({ params }: { params: Promise<{ id:
             </p>
             <DocumentosManager
               condominioId={id}
+              limiteMb={process.env.VERCEL ? 4 : 25}
               iaAtiva={!!ia.apiKey}
               docs={docs.map((d) => ({ ...d, criadoEm: d.criadoEm.toISOString() }))}
             />

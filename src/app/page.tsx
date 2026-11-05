@@ -2,9 +2,11 @@ import Link from "next/link";
 import { count, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { condominioDocumentos, condominios, documentosEmitidos } from "@/db/schema";
+import { BancoIndisponivel } from "@/components/BancoIndisponivel";
 import { Hero } from "@/components/Hero";
 import { Icon } from "@/components/Icon";
 import { TipoBadge } from "@/components/TipoBadge";
+import { verificarBanco } from "@/lib/banco";
 import { getIaConfig } from "@/lib/config";
 import { dataCurta } from "@/lib/format";
 import type { TipoDoc } from "@/lib/types";
@@ -15,6 +17,9 @@ export const dynamic = "force-dynamic";
 const ICONES = { notificacao: "bell", multa: "gavel", comunicado: "megaphone" } as const;
 
 export default async function Home() {
+  const banco = await verificarBanco();
+  if (!banco.ok) return <BancoIndisponivel status={banco} />;
+
   const [porTipo, [{ nCondos }], [{ nDocs }], recentes, ia] = await Promise.all([
     db
       .select({ tipo: documentosEmitidos.tipo, n: count() })

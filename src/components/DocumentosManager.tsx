@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { tamanhoLegivel } from "@/lib/format";
+import { lerRespostaJson } from "@/lib/http";
 import { Icon, Spinner } from "./Icon";
 
 export type DocItem = {
@@ -29,52 +30,73 @@ export function DocumentosManager({
   condominioId,
   docs,
   iaAtiva,
+  limiteMb = 25,
 }: {
   condominioId: string;
   docs: DocItem[];
   iaAtiva: boolean;
+  /** Limite por arquivo (no Vercel, 4 MB por causa do limite de 4,5 MB por envio). */
+  limiteMb?: number;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [categoria, setCategoria] = useState(CATEGORIAS[0]);
   const [enviando, setEnviando] = useState(false);
+  const [progresso, setProgresso] = useState("");
   const [arrastando, setArrastando] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const limiteTexto = `${limiteMb.toLocaleString("pt-BR")} MB`;
 
+  // Envia um arquivo por requisição para respeitar o limite de tamanho por envio do servidor.
   async function enviar(files: FileList | File[]) {
     const arquivos = Array.from(files);
     if (arquivos.length === 0) return;
     setEnviando(true);
     setMsg(null);
+    let criados = 0;
+    let semTexto = 0;
+    const recusados: string[] = [];
     try {
-      const fd = new FormData();
-      fd.append("categoria", categoria);
-      arquivos.forEach((f) => fd.append("arquivos", f));
-      const r = await fetch(`/api/condominios/${condominioId}/documentos`, {
-        method: "POST",
-        body: fd,
-      });
-      const j = await r.json();
-      if (!r.ok) {
-        setMsg({ ok: false, texto: j.erro ?? "Não foi possível enviar os arquivos." });
-        return;
+      for (const [i, arq] of arquivos.entries()) {
+        if (arq.size > limiteMb * 1024 * 1024) {
+          recusados.push(`${arq.name} (acima de ${limiteTexto} — compacte ou divida o arquivo)`);
+          continue;
+        }
+        setProgresso(`Enviando ${i + 1} de ${arquivos.length}: ${arq.name}`);
+        const fd = new FormData();
+        fd.append("categoria", categoria);
+        fd.append("arquivos", arq);
+        try {
+          const r = await fetch(`/api/condominios/${condominioId}/documentos`, {
+            method: "POST",
+            body: fd,
+          });
+          const j = await lerRespostaJson(r);
+          if (!r.ok) {
+            recusados.push(`${arq.name} (${j.erro ?? `erro ${r.status}`})`);
+            continue;
+          }
+          for (const c of (j.criados ?? []) as { status: string }[]) {
+            criados++;
+            if (c.status !== "ok") semTexto++;
+          }
+          recusados.push(...((j.recusados ?? []) as string[]));
+        } catch {
+          recusados.push(`${arq.name} (falha de conexão)`);
+        }
       }
-      const criados = (j.criados ?? []) as { nome: string; status: string }[];
-      const semTexto = criados.filter((c) => c.status !== "ok").length;
-      const recusados = (j.recusados ?? []) as string[];
       setMsg({
-        ok: recusados.length === 0 && semTexto === 0,
+        ok: recusados.length === 0 && semTexto === 0 && criados > 0,
         texto:
-          `${criados.length} arquivo(s) guardado(s) no banco de dados.` +
+          `${criados} arquivo(s) guardado(s) no banco de dados.` +
           (semTexto ? ` ${semTexto} sem texto lido (veja o aviso na lista).` : "") +
-          (recusados.length ? ` Recusados: ${recusados.join(", ")}.` : ""),
+          (recusados.length ? ` Não enviados: ${recusados.join("; ")}.` : ""),
       });
-      router.refresh();
-    } catch {
-      setMsg({ ok: false, texto: "Falha de conexão durante o envio." });
+      if (criados > 0) router.refresh();
     } finally {
       setEnviando(false);
+      setProgresso("");
       if (inputRef.current) inputRef.current.value = "";
     }
   }
@@ -93,7 +115,7 @@ export function DocumentosManager({
     setMsg(null);
     try {
       const r = await fetch(`/api/documentos/${d.id}/reprocessar`, { method: "POST" });
-      const j = await r.json();
+      const j = await lerRespostaJson(r);
       if (!r.ok) setMsg({ ok: false, texto: j.erro ?? "Não foi possível reprocessar." });
       else {
         setMsg({
@@ -137,7 +159,7 @@ export function DocumentosManager({
           </div>
           <label className={`btn btn-brand ${enviando ? "pointer-events-none opacity-60" : ""}`}>
             {enviando ? <Spinner /> : <Icon name="upload" />}
-            {enviando ? "Enviando e lendo…" : "Selecionar arquivos"}
+            {enviando ? progresso || "Enviando e lendo…" : "Selecionar arquivos"}
             <input
               ref={inputRef}
               type="file"
@@ -149,7 +171,7 @@ export function DocumentosManager({
           </label>
         </div>
         <p className="mt-2 text-[11.5px] text-slate-500">
-          Arraste arquivos para cá ou selecione. Aceita PDF, DOCX, TXT e imagens (até 25 MB cada). O
+          Arraste arquivos para cá ou selecione. Aceita PDF, DOCX, TXT e imagens (até {limiteTexto} cada). O
           arquivo e o texto lido ficam guardados no banco de dados deste condomínio.
           {!iaAtiva ? " PDFs escaneados e imagens só têm o texto lido com a IA configurada." : ""}
         </p>

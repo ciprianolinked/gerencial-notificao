@@ -17,6 +17,7 @@ import {
 } from "@/lib/types";
 import type { HistoricoItem } from "@/lib/historico";
 import type { AnaliseViabilidade } from "@/lib/ia-analise";
+import { lerRespostaJson } from "@/lib/http";
 import { DocumentPaper } from "./DocumentPaper";
 import { Icon, Spinner } from "./Icon";
 import { SegmentDashboard } from "./SegmentDashboard";
@@ -248,7 +249,7 @@ export function SegmentWorkspace({
           condominioId: condominioId || null,
           briefing,
           dados: dadosIA,
-          doc,
+          doc: { ...doc, logoDataUrl: "" },
           documentoIds: condominioId ? docsUsaveis.map((d) => d.id) : undefined,
         }),
       });
@@ -311,7 +312,7 @@ export function SegmentWorkspace({
           unidade: unidadeAtual,
           assunto: assuntoAtual,
           destinatario: destAtual,
-          doc,
+          doc: { ...doc, logoDataUrl: "" },
           docId,
           briefing,
         }),
@@ -515,7 +516,7 @@ export function SegmentWorkspace({
       fd.append("tipo", tipo);
       fd.append("arquivo", file);
       const r = await fetch("/api/modelos/importar", { method: "POST", body: fd });
-      const j = await r.json();
+      const j = await lerRespostaJson(r);
       if (!r.ok) {
         avisar("erro", j.erro ?? "Não foi possível ler o modelo.");
         return;

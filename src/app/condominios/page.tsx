@@ -3,13 +3,18 @@ import Link from "next/link";
 import { count, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { condominioDocumentos, condominios, documentosEmitidos } from "@/db/schema";
+import { BancoIndisponivel } from "@/components/BancoIndisponivel";
 import { Hero } from "@/components/Hero";
 import { NovoCondominio } from "@/components/NovoCondominio";
+import { verificarBanco } from "@/lib/banco";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Condomínios · Gerencial" };
 
 export default async function CondominiosPage() {
+  const banco = await verificarBanco();
+  if (!banco.ok) return <BancoIndisponivel status={banco} />;
+
   const [lista, docs, emitidos] = await Promise.all([
     db
       .select({

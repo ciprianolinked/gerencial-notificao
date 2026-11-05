@@ -29,8 +29,8 @@ export async function baixarPdf(
   Font.registerHyphenationCallback((palavra) => [palavra]);
 
   const logoUrl =
-    (await paraDataUrl("/identidade/logo-doc.png")) ??
-    `${window.location.origin}/identidade/logo-doc.png`;
+    (await paraDataUrl("/marca/logo-doc.png")) ??
+    `${window.location.origin}/marca/logo-doc.png`;
   const condoLogo = doc.logoDataUrl || (condoLogoUrl ? await paraDataUrl(condoLogoUrl) : null);
 
   const blob = await pdf(

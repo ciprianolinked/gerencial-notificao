@@ -118,7 +118,7 @@ export function DocumentPaper({
         <div className="flex min-h-[88px] items-start pt-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/identidade/logo-doc.png"
+            src="/marca/logo-doc.png"
             alt="Gerencial — Governança Condominial"
             className="h-auto w-full max-w-[150px] object-contain"
           />

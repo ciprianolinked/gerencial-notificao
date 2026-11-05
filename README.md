@@ -1,24 +1,41 @@
 # Gerencial — notificações, multas e comunicados
 
-Aplicação Next.js com PostgreSQL/Drizzle para a gestão de documentos condominiais.
+Aplicação Next.js + PostgreSQL (Drizzle) da Gerencial · Governança Condominial.
 
-## Publicar no Vercel
+## Publicação (GitHub + Vercel + Neon)
 
-1. Crie um banco **PostgreSQL hospedado e acessível pelo Vercel** (por exemplo, Neon ou Supabase). Copie a URL de conexão fornecida pelo serviço. Uma URL com `127.0.0.1` ou `localhost` só funciona no seu computador e **não funciona no Vercel**.
-2. No projeto do Vercel, abra **Settings → Environment Variables** e crie a variável de servidor `DATABASE_URL` com a URL do PostgreSQL hospedado. Se usar deployments de teste, configure também o ambiente **Preview**. Não use `NEXT_PUBLIC_` no nome: a conexão com o banco deve ficar somente no servidor.
-3. Aplique as tabelas no **mesmo banco** da variável do Vercel. No terminal, a partir da raiz do projeto, execute:
+O passo a passo completo, com **verificação ao vivo da instalação**, está no próprio sistema:
+**`/guia-publicacao`** (link no rodapé de todas as páginas).
 
-   ```bash
-   DATABASE_URL='postgresql://usuario:senha@host:5432/banco?sslmode=require' npx drizzle-kit push --config=drizzle.production.config.ts
-   ```
+Resumo:
 
-   Substitua a URL de exemplo pela URL real do seu provedor. **Não coloque sua senha no código nem faça commit da sua `.env`.** O comando `npx drizzle-kit push` sem `--config` usa o banco local de desenvolvimento definido em `drizzle.config.json`.
-4. Faça um novo deploy no Vercel após configurar a variável. Confira `https://seu-dominio/api/health`: deve retornar `{"ok":true}`. Se retornar `{"ok":false}`, confira a URL, o acesso de rede e se o banco está ativo.
+1. Envie o código para um repositório no GitHub (sem o arquivo `.env`).
+2. No Vercel, importe o repositório (Framework: Next.js).
+3. Conecte um banco Neon pela aba **Storage** do projeto no Vercel (cria `DATABASE_URL` automaticamente) **ou** crie o projeto em neon.tech e adicione a variável `DATABASE_URL` em **Settings → Environment Variables**.
+4. Faça **Redeploy** e abra o site. **As tabelas são criadas automaticamente no primeiro acesso.**
+5. Opcional: configure a chave do Gemini em **Configurar IA** (ou variável `GEMINI_API_KEY`).
 
-> O build do Next.js pode ser concluído sem `DATABASE_URL`: a conexão é inicializada somente quando a aplicação consulta o banco. **Isso não elimina a necessidade de configurar a variável e aplicar as tabelas para usar o aplicativo em produção.**
+Se algo estiver errado, as páginas mostram um diagnóstico (variável ausente, URL local, senha incorreta, etc.) em vez de um erro genérico, e `/api/health` responde `{"ok":true}` quando o banco está acessível.
 
-A chave `GEMINI_API_KEY` é opcional para o deploy inicial. Você pode defini-la no Vercel ou configurar a IA pela tela **Configurar IA** depois que o banco estiver pronto.
+### Script SQL manual (opcional)
+
+O mesmo script usado na criação automática aparece em `/guia-publicacao#sql` para execução no **SQL Editor** do Neon. Também é possível aplicar o schema com o Drizzle:
+
+```bash
+DATABASE_URL='postgresql://...' npx drizzle-kit push --config=drizzle.production.config.ts
+```
 
 ## Desenvolvimento local
 
-O projeto de desenvolvimento usa `DATABASE_URL` em `.env` apontando para um PostgreSQL local. Instale as dependências com `npm install`, aplique o schema com `npx drizzle-kit push` e inicie com `npm run dev`.
+Crie um `.env` com `DATABASE_URL` (PostgreSQL local ou uma branch do Neon) e rode:
+
+```bash
+npm install
+npm run dev
+```
+
+## Observações
+
+- A logo da Gerencial é servida pelo próprio código em `/marca/logo.png`, `/marca/logo-doc.png` e `/marca/simbolo.png` (não depende de imagens binárias no repositório).
+- No Vercel, cada envio de arquivo é limitado a 4,5 MB; o sistema envia um arquivo por vez e avisa quando o arquivo é grande demais.
+- Ao alterar `src/db/schema.ts`, atualize também `src/db/ddl.ts` (DDL idempotente usado na criação automática).

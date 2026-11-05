@@ -44,7 +44,7 @@ export function Header() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/identidade/logo.png"
+              src="/marca/logo.png"
               alt="Gerencial — Governança Condominial"
               style={{ height: 26 }}
               className="w-auto max-w-full"
