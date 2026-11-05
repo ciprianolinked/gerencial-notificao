@@ -111,14 +111,15 @@ export function IaForm({
           onChange={(e) => setModel(e.target.value)}
         />
         <datalist id="modelos-gemini">
+          <option value="gemini-3.1-flash-lite" />
+          <option value="gemini-3.1-flash" />
           <option value="gemini-2.5-flash" />
           <option value="gemini-2.5-flash-lite" />
           <option value="gemini-2.5-pro" />
-          <option value="gemini-2.0-flash" />
         </datalist>
         <p className="mt-1.5 text-[11.5px] text-slate-500">
-          Recomendado: <span className="font-mono">gemini-2.5-flash</span> (gratuito e com janela longa para
-          ler convenções e regimentos).
+          Recomendado: <span className="font-mono">gemini-3.1-flash-lite</span> (gratuito, rápido e com
+          janela longa para ler convenções e regimentos).
         </p>
       </div>
 

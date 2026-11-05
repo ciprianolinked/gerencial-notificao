@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { configuracoes } from "@/db/schema";
 
-export const MODELO_IA_PADRAO = "gemini-2.5-flash";
+export const MODELO_IA_PADRAO = "gemini-3.1-flash-lite";
 
 export async function lerConfig(chave: string): Promise<string | null> {
   const [row] = await db
