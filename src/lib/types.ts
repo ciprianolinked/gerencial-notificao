@@ -256,3 +256,59 @@ export function mesmaUnidade(a: string, b: string): boolean {
   if (da || db) return !!da && da === db;
   return na.includes(nb) || nb.includes(na);
 }
+
+const STOPWORDS_ASSUNTO = new Set([
+  "para",
+  "pelo",
+  "pela",
+  "apos",
+  "como",
+  "este",
+  "esta",
+  "desse",
+  "dessa",
+  "condominio",
+  "unidade",
+  "apartamento",
+  "bloco",
+  "apto",
+  "sobre",
+  "entre",
+  "depois",
+  "antes",
+  "infracao",
+  "ocorrencia",
+  "notificacao",
+  "multa",
+  "geral",
+  "mesmo",
+  "descumprimento",
+  "norma",
+  "condominial",
+]);
+
+/** Palavras relevantes de um assunto/infração. */
+export function tokensAssunto(s: string): string[] {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4 && !STOPWORDS_ASSUNTO.has(w));
+}
+
+/**
+ * Compara assuntos/infrações. A maioria dos regulamentos só gera multa
+ * na reincidência do MESMO assunto (ex.: barulho vs. barulho).
+ */
+export function mesmoAssunto(a: string, b: string): boolean {
+  const na = normalizarTexto(a);
+  const nb = normalizarTexto(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.length >= 6 && nb.length >= 6 && (na.includes(nb) || nb.includes(na))) return true;
+  const ta = tokensAssunto(a);
+  const tb = new Set(tokensAssunto(b));
+  if (ta.length === 0 || tb.size === 0) return false;
+  return ta.some((t) => tb.has(t));
+}

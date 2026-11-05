@@ -1,71 +1,50 @@
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-/**
- * Cliente do PostgreSQL com inicialização preguiçosa.
- *
- * O build da Vercel importa os módulos das rotas para coletar dados das páginas.
- * Se a conexão (ou a validação de DATABASE_URL) acontecesse no topo do arquivo,
- * o build falharia sem as variáveis de ambiente. Aqui o pool só é criado quando
- * a primeira consulta é realmente executada.
- */
-
-type Db = NodePgDatabase<Record<string, never>>;
+type Database = ReturnType<typeof drizzle>;
 
 const globalForDb = globalThis as typeof globalThis & {
   __arenaNextJsPostgresqlPool?: Pool;
-  __arenaNextJsDb?: Db;
 };
 
-function conexao(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
+let database: Database | undefined;
+
+/**
+ * Next.js imports route modules while collecting page data during `next build`.
+ * Do not read/validate DATABASE_URL or initialize a connection at module load:
+ * on Vercel the build must be able to import routes without a database connection.
+ * The connection is created on the first real database operation instead.
+ */
+function getDatabase(): Database {
+  if (database) return database;
+
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
     throw new Error(
-      "DATABASE_URL não configurada. Defina a variável de ambiente apontando para o PostgreSQL " +
-        "(por exemplo, um banco Neon/Supabase na Vercel) e rode as migrações do Drizzle.",
+      "DATABASE_URL não configurada. Configure a URL de um PostgreSQL acessível no ambiente do Vercel para usar o aplicativo.",
     );
   }
-  return url;
-}
 
-export function getPool(): Pool {
-  if (!globalForDb.__arenaNextJsPostgresqlPool) {
-    globalForDb.__arenaNextJsPostgresqlPool = new Pool({ connectionString: conexao() });
+  const pool =
+    (process.env.NODE_ENV !== "production" && globalForDb.__arenaNextJsPostgresqlPool) ||
+    new Pool({ connectionString: databaseUrl });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForDb.__arenaNextJsPostgresqlPool = pool;
   }
-  return globalForDb.__arenaNextJsPostgresqlPool;
+
+  database = drizzle(pool);
+  return database;
 }
 
-export function getDb(): Db {
-  if (!globalForDb.__arenaNextJsDb) {
-    const pool = getPool();
-    globalForDb.__arenaNextJsDb = drizzle(pool);
-    if (process.env.NODE_ENV !== "production") {
-      globalForDb.__arenaNextJsPostgresqlPool = pool;
-    }
-  }
-  return globalForDb.__arenaNextJsDb;
-}
+/** Mantém a API existente (`db.select`, `db.insert` etc.) com inicialização tardia. */
+export const db: Database = new Proxy({} as Database, {
+  get(_target, property) {
+    // Introspection during build must not establish a database connection.
+    if (property === "then" || typeof property === "symbol") return undefined;
 
-/** Proxy que cria a conexão no primeiro acesso (db.select(), db.execute(), ...). */
-export const db: Db = new Proxy({} as Db, {
-  get(_alvo, prop) {
-    const instancia = getDb();
-    const valor = Reflect.get(instancia as object, prop, instancia);
-    return typeof valor === "function" ? valor.bind(instancia) : valor;
-  },
-  has(_alvo, prop) {
-    return prop in (getDb() as object);
-  },
-  ownKeys() {
-    return Reflect.ownKeys(getDb() as object);
-  },
-  getOwnPropertyDescriptor(_alvo, prop) {
-    return (
-      Reflect.getOwnPropertyDescriptor(getDb() as object, prop) ?? {
-        configurable: true,
-        enumerable: true,
-        value: undefined,
-      }
-    );
+    const instance = getDatabase();
+    const value = Reflect.get(instance, property, instance);
+    return typeof value === "function" ? value.bind(instance) : value;
   },
 });

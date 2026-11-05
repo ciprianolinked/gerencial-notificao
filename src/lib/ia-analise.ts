@@ -12,11 +12,7 @@ export type AnaliseViabilidade = {
   resumo: string;
   reincidencia: {
     reincidente: boolean;
-    reincidenteMesmoAssunto: boolean;
     ocorrenciasAnteriores: number;
-    ocorrenciasMesmoAssunto: number;
-    ocorrenciasOutrosAssuntos: number;
-    protocolosMesmoAssunto: string[];
     ultimaOcorrencia: string;
     criterio: string;
   };
@@ -32,9 +28,10 @@ const SISTEMA = `Você é analista de governança condominial da Gerencial (admi
 REGRAS
 1. Não invente normas, artigos, valores, datas nem registros. Use apenas os documentos e o histórico fornecidos.
 2. Considere, quando aplicável: previsão da conduta como infração, previsão da penalidade e seu valor/critério, necessidade de notificação prévia, prazo de defesa/recurso e contraditório, competência para aplicar a penalidade (síndico, assembleia, conselho) e reincidência.
-3. Reincidência só pode ser afirmada se houver registro anterior da mesma unidade no histórico, com conduta semelhante ou conforme o critério do regimento. Informe o critério usado.
-4. Se faltar documento ou informação, marque o requisito como "nao_identificado" e explique em "alertas". Não conclua "sim" sem fundamento documental.
-5. Responda SOMENTE com JSON válido no esquema pedido, em português do Brasil, de forma objetiva.`;
+3. Reincidência, na maioria dos regulamentos, só se configura quando o novo fato é do MESMO ASSUNTO / mesma infração da notificação ou multa anterior (ex.: novo barulho após notificação de barulho). Não trate como reincidência um registro de assunto diferente (ex.: animal vs. barulho), salvo se o regulamento disser o contrário. Itens do histórico marcados com [MESMO ASSUNTO] já foram considerados equivalentes pelo sistema.
+4. Reincidência só pode ser afirmada se houver registro anterior da mesma unidade no histórico, com o mesmo assunto (ou conduta equivalente segundo o regimento). Informe o critério usado.
+5. Se faltar documento ou informação, marque o requisito como "nao_identificado" e explique em "alertas". Não conclua "sim" sem fundamento documental.
+6. Responda SOMENTE com JSON válido no esquema pedido, em português do Brasil, de forma objetiva.`;
 
 export async function analisarViabilidade(input: {
   tipo: TipoDoc;
@@ -42,7 +39,6 @@ export async function analisarViabilidade(input: {
   docs: DocCtx[];
   historico: HistoricoItem[];
   unidade: string;
-  destinatario?: string;
   assunto?: string;
   doc: DocData;
   briefing: string;
@@ -61,8 +57,7 @@ export async function analisarViabilidade(input: {
 ##############################
 CONDOMÍNIO: ${input.condominio?.nome ?? input.doc.condominio}
 UNIDADE ANALISADA: ${input.unidade}
-DESTINATÁRIO: ${input.destinatario?.trim() || "(não especificado expressamente)"}
-ASSUNTO / INFRAÇÃO EM ANÁLISE: ${input.assunto?.trim() || "(extrair do documento)"}
+ASSUNTO / INFRAÇÃO ANALISADO: ${input.assunto?.trim() || "(não informado — infira pelo texto do documento)"}
 DATA DE HOJE: ${input.hoje}
 DOCUMENTO EM ELABORAÇÃO: ${input.tipo === "multa" ? "MULTA" : "NOTIFICAÇÃO"}
 
@@ -83,30 +78,18 @@ ${input.briefing.trim() || "(sem relato complementar)"}
 HISTÓRICO REAL DA UNIDADE (notificações e multas já registradas no sistema)
 ${historico || "(nenhum registro anterior para esta unidade)"}
 
-TAREFA ESPECÍFICA
-1. Analise se é cabível aplicar multa à unidade neste momento, conforme o regulamento do condomínio e o histórico de ocorrências.
-2. IMPORTANTE — REINCIDÊNCIA DO MESMO ASSUNTO:
-   A maioria das convenções e regimentos internos de condomínio exige que a multa seja precedida de notificação prévia SOBRE A MESMA CONDUTA / MESMO ASSUNTO (ex.: barulho exige notificação prévia de barulho; vaga de garagem exige notificação prévia de vaga de garagem).
-   Analise com rigor:
-   - O histórico contém notificações ou multas anteriores sobre O MESMO ASSUNTO / MESMA INFRAÇÃO?
-   - Quantas ocorrências anteriores foram especificamente sobre o MESMO ASSUNTO? E quantas foram sobre assuntos diferentes?
-   - Liste os números de protocolo que são do mesmo assunto.
-   - O regulamento deste condomínio exige reincidência específica no mesmo assunto ou reincidência genérica?
-   - Se o regulamento exige reincidência no mesmo assunto e só houver ocorrências de assuntos diferentes, a aplicação de multa NÃO deve ser recomendada ou deve ser apontada com ressalvas gravíssimas.
+TAREFA
+Analise se é cabível multar esta unidade neste momento, conforme a documentação e o histórico, e se configura reincidência do MESMO ASSUNTO. Separe no resumo: (a) registros da unidade no mesmo assunto; (b) registros da unidade em assuntos diferentes.
 
 Responda SOMENTE com JSON:
 {
   "podeMultar": "sim" | "nao" | "ressalvas",
-  "resumo": "string — conclusão em até 4 linhas destacando a análise do mesmo assunto",
+  "resumo": "string — conclusão em até 4 linhas",
   "reincidencia": {
     "reincidente": boolean,
-    "reincidenteMesmoAssunto": boolean,
     "ocorrenciasAnteriores": number,
-    "ocorrenciasMesmoAssunto": number,
-    "ocorrenciasOutrosAssuntos": number,
-    "protocolosMesmoAssunto": ["string — número de cada notificação/multa anterior do mesmo assunto"],
-    "ultimaOcorrencia": "string — número e data do registro anterior mais relevante do mesmo assunto, ou vazio",
-    "criterio": "string — explicação detalhada se houve reincidência do mesmo assunto e o que o regulamento exige"
+    "ultimaOcorrencia": "string — número e data do registro mais recente, ou vazio",
+    "criterio": "string — por que configura ou não reincidência"
   },
   "requisitos": [
     { "item": "string", "situacao": "atendido" | "pendente" | "nao_identificado", "detalhe": "string" }
@@ -146,35 +129,16 @@ Responda SOMENTE com JSON:
         .filter((x) => x.label && x.value)
     : [];
 
-  const ocorrenciasAnteriores =
-    typeof rj.ocorrenciasAnteriores === "number" && Number.isFinite(rj.ocorrenciasAnteriores)
-      ? Math.max(0, Math.round(rj.ocorrenciasAnteriores))
-      : input.historico.length;
-
-  const ocorrenciasMesmoAssunto =
-    typeof rj.ocorrenciasMesmoAssunto === "number" && Number.isFinite(rj.ocorrenciasMesmoAssunto)
-      ? Math.max(0, Math.round(rj.ocorrenciasMesmoAssunto))
-      : rj.reincidenteMesmoAssunto === true
-        ? Math.max(1, ocorrenciasAnteriores)
-        : 0;
-
-  const ocorrenciasOutrosAssuntos =
-    typeof rj.ocorrenciasOutrosAssuntos === "number" && Number.isFinite(rj.ocorrenciasOutrosAssuntos)
-      ? Math.max(0, Math.round(rj.ocorrenciasOutrosAssuntos))
-      : Math.max(0, ocorrenciasAnteriores - ocorrenciasMesmoAssunto);
-
   return {
     analise: {
       podeMultar: j.podeMultar === "sim" || j.podeMultar === "nao" ? j.podeMultar : "ressalvas",
       resumo: str(j.resumo),
       reincidencia: {
-        reincidente: rj.reincidente === true || ocorrenciasAnteriores > 0,
-        reincidenteMesmoAssunto:
-          rj.reincidenteMesmoAssunto === true || ocorrenciasMesmoAssunto > 0,
-        ocorrenciasAnteriores,
-        ocorrenciasMesmoAssunto,
-        ocorrenciasOutrosAssuntos,
-        protocolosMesmoAssunto: lista(rj.protocolosMesmoAssunto),
+        reincidente: rj.reincidente === true,
+        ocorrenciasAnteriores:
+          typeof rj.ocorrenciasAnteriores === "number" && Number.isFinite(rj.ocorrenciasAnteriores)
+            ? Math.max(0, Math.round(rj.ocorrenciasAnteriores))
+            : input.historico.length,
         ultimaOcorrencia: str(rj.ultimaOcorrencia),
         criterio: str(rj.criterio),
       },

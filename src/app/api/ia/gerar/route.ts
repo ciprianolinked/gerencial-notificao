@@ -7,7 +7,7 @@ import { dataPorExtenso } from "@/lib/format";
 import { buscarHistorico, historicoParaPrompt } from "@/lib/historico";
 import { redigirDocumento } from "@/lib/ia";
 import { modeloFabrica } from "@/lib/modelos";
-import { isTipo, sanitizeDoc, unidadeDe } from "@/lib/types";
+import { assuntoDe, isTipo, sanitizeDoc, unidadeDe } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -81,7 +81,11 @@ export async function POST(req: Request) {
     let historico = "";
     const unidade = dados.unidade?.trim() || unidadeDe(doc);
     if (condominioId && ehUuid(condominioId) && unidade && tipo !== "comunicado") {
-      const itens = await buscarHistorico(condominioId, unidade);
+      const itens = await buscarHistorico({
+        condominioId,
+        unidade,
+        assunto: dados.assunto?.trim() || assuntoDe(doc),
+      });
       historico = historicoParaPrompt(itens);
     }
 

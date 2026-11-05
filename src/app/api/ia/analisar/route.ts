@@ -7,7 +7,7 @@ import { dataPorExtenso } from "@/lib/format";
 import { buscarHistorico } from "@/lib/historico";
 import { analisarViabilidade } from "@/lib/ia-analise";
 import { modeloFabrica } from "@/lib/modelos";
-import { assuntoDe, destinatarioDe, isTipo, sanitizeDoc, unidadeDe } from "@/lib/types";
+import { assuntoDe, isTipo, sanitizeDoc, unidadeDe } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,9 +24,6 @@ export async function POST(req: Request) {
     const unidade =
       (typeof body.unidade === "string" && body.unidade.trim()) || unidadeDe(doc);
     if (!unidade.trim()) return erro("Informe a unidade para analisar o histórico e a reincidência.");
-
-    const destinatario =
-      (typeof body.destinatario === "string" && body.destinatario.trim()) || destinatarioDe(doc);
     const assunto =
       (typeof body.assunto === "string" && body.assunto.trim()) || assuntoDe(doc);
 
@@ -65,11 +62,12 @@ export async function POST(req: Request) {
           ),
         )
         .orderBy(desc(condominioDocumentos.criadoEm)),
-      buscarHistorico(
+      buscarHistorico({
         condominioId,
         unidade,
-        typeof body.docId === "string" && ehUuid(body.docId) ? body.docId : null,
-      ),
+        assunto,
+        excluirId: typeof body.docId === "string" && ehUuid(body.docId) ? body.docId : null,
+      }),
     ]);
 
     const { analise, documentosUsados } = await analisarViabilidade({
@@ -78,7 +76,6 @@ export async function POST(req: Request) {
       docs: docs.filter((d) => d.texto.trim().length > 0),
       historico,
       unidade,
-      destinatario,
       assunto,
       doc,
       briefing: typeof body.briefing === "string" ? body.briefing.slice(0, 8000) : "",

@@ -134,9 +134,7 @@ export function SegmentWorkspace({
   const [analisando, setAnalisando] = useState(false);
   const [analiseErro, setAnaliseErro] = useState<string | null>(null);
   const [analise, setAnalise] = useState<AnaliseResp | null>(null);
-  const [campoUnidade, setCampoUnidade] = useState("");
-  const [campoDestinatario, setCampoDestinatario] = useState("");
-  const [campoAssunto, setCampoAssunto] = useState("");
+  const [assuntosHist, setAssuntosHist] = useState<string[]>([]);
 
   const [salvando, setSalvando] = useState(false);
   const [pdfCarregando, setPdfCarregando] = useState(false);
@@ -169,12 +167,31 @@ export function SegmentWorkspace({
   const docsUsaveis = (docsCondo ?? []).filter((d) => d.caracteres > 0 && !excluidos.has(d.id));
   const pendencias = contarPendencias(doc);
   const condoSelecionado = condominios.find((c) => c.id === condominioId);
-  const unidadeDoc = dadosIA.unidade?.trim() || unidadeDe(doc);
-  const destinatarioDoc = dadosIA.destinatario?.trim() || destinatarioDe(doc);
-  const assuntoDoc = dadosIA.assunto?.trim() || assuntoDe(doc);
-  const unidadeAtual = campoUnidade.trim() || unidadeDoc;
-  const destinatarioAtual = campoDestinatario.trim() || destinatarioDoc;
-  const assuntoAtual = campoAssunto.trim() || assuntoDoc;
+  const efetivo = (manual: string | undefined, fallback: string) => {
+    const m = manual?.trim() ?? "";
+    if (m) return m;
+    const f = fallback.trim();
+    if (!f || /^\[[^\]]+\]$/.test(f)) return "";
+    return f;
+  };
+  const unidadeAtual = efetivo(dadosIA.unidade, unidadeDe(doc));
+  const destAtual = efetivo(dadosIA.destinatario, destinatarioDe(doc));
+  const assuntoAtual = efetivo(dadosIA.assunto, assuntoDe(doc));
+
+  useEffect(() => {
+    if (!condominioId) {
+      setAssuntosHist([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const q = new URLSearchParams({ condominioId });
+    if (unidadeAtual.trim()) q.set("unidade", unidadeAtual.trim());
+    fetch(`/api/historico?${q}`, { signal: ctrl.signal })
+      .then((r) => r.json())
+      .then((j) => setAssuntosHist(Array.isArray(j.assuntos) ? (j.assuntos as string[]) : []))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [condominioId, unidadeAtual]);
 
   function itemDe(d: DocData, id: string, numero: string, st: StatusDoc): SalvoItem {
     const antigo = lista.find((x) => x.id === id);
@@ -268,11 +285,18 @@ export function SegmentWorkspace({
 
   async function analisar() {
     if (!condominioId) {
-      setAnaliseErro("Selecione o condomínio para analisar o histórico e a reincidência.");
+      setAnaliseErro("Selecione o condomínio para analisar o histórico.");
+      setAnalise(null);
       return;
     }
     if (!unidadeAtual) {
-      setAnaliseErro("Informe a unidade para analisar o histórico.");
+      setAnaliseErro("Informe a unidade. A reincidência é apurada por unidade.");
+      setAnalise(null);
+      return;
+    }
+    if (tipo === "multa" && !assuntoAtual) {
+      setAnaliseErro("Informe o assunto / infração. A multa, em geral, exige reincidência do mesmo tema.");
+      setAnalise(null);
       return;
     }
     setAnalisando(true);
@@ -285,8 +309,8 @@ export function SegmentWorkspace({
           tipo,
           condominioId,
           unidade: unidadeAtual,
-          destinatario: destinatarioAtual,
           assunto: assuntoAtual,
+          destinatario: destAtual,
           doc,
           docId,
           briefing,
@@ -760,30 +784,31 @@ export function SegmentWorkspace({
             ) : null}
           </div>
 
-          {/* Histórico e reincidência */}
           {tipo !== "comunicado" ? (
             <div className="card p-4">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand-soft text-brand-dark">
-                  <Icon name="gavel" className="h-4 w-4" />
+              <div className="flex items-start gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-dark">
+                  <Icon name="edit" className="h-4 w-4" />
                 </span>
                 <div>
                   <h2 className="text-[14px] font-extrabold leading-tight text-ink">
                     Histórico e reincidência
                   </h2>
                   <p className="text-[11px] leading-snug text-slate-500">
-                    A IA confere o histórico de notificações e multas da unidade e o regulamento do condomínio.
+                    A IA confere o histórico de notificações e multas da unidade e o regulamento do
+                    condomínio. A reincidência, na maioria dos regulamentos, vale para o{" "}
+                    <span className="font-bold text-ink">mesmo assunto</span>.
                   </p>
                 </div>
               </div>
 
               <div className="mt-3 grid gap-2.5">
                 <div>
-                  <label className="label" htmlFor="ana-condo">
+                  <label className="label" htmlFor="hist-condo">
                     Condomínio
                   </label>
                   <select
-                    id="ana-condo"
+                    id="hist-condo"
                     className="field"
                     value={condominioId}
                     onChange={(e) => escolherCondominio(e.target.value)}
@@ -796,44 +821,52 @@ export function SegmentWorkspace({
                     ))}
                   </select>
                 </div>
-
                 <div>
-                  <label className="label" htmlFor="ana-unidade">
+                  <label className="label" htmlFor="hist-unidade">
                     Unidade
                   </label>
                   <input
-                    id="ana-unidade"
+                    id="hist-unidade"
                     className="field"
-                    value={campoUnidade}
-                    placeholder={unidadeDoc || "[Bloco / Apartamento]"}
-                    onChange={(e) => setCampoUnidade(e.target.value)}
+                    value={dadosIA.unidade ?? ""}
+                    placeholder={unidadeDe(doc) || "[Bloco / Apartamento]"}
+                    onChange={(e) => setDadosIA((d) => ({ ...d, unidade: e.target.value }))}
                   />
                 </div>
-
                 <div>
-                  <label className="label" htmlFor="ana-destinatario">
+                  <label className="label" htmlFor="hist-dest">
                     Destinatário
                   </label>
                   <input
-                    id="ana-destinatario"
+                    id="hist-dest"
                     className="field"
-                    value={campoDestinatario}
-                    placeholder={destinatarioDoc || "[Nome do condômino / morador]"}
-                    onChange={(e) => setCampoDestinatario(e.target.value)}
+                    value={dadosIA.destinatario ?? ""}
+                    placeholder={destinatarioDe(doc) || "[Nome do condômino / morador]"}
+                    onChange={(e) => setDadosIA((d) => ({ ...d, destinatario: e.target.value }))}
                   />
                 </div>
-
                 <div>
-                  <label className="label" htmlFor="ana-assunto">
+                  <label className="label" htmlFor="hist-assunto">
                     Assunto / infração
                   </label>
                   <input
-                    id="ana-assunto"
+                    id="hist-assunto"
                     className="field"
-                    value={campoAssunto}
-                    placeholder={assuntoDoc || "[Assunto ou infração — ex.: perturbação do sossego]"}
-                    onChange={(e) => setCampoAssunto(e.target.value)}
+                    list="hist-assuntos"
+                    value={dadosIA.assunto ?? ""}
+                    placeholder={assuntoDe(doc) || "Ex.: perturbação do sossego, animais, lixo"}
+                    onChange={(e) => setDadosIA((d) => ({ ...d, assunto: e.target.value }))}
                   />
+                  <datalist id="hist-assuntos">
+                    {assuntosHist.map((a) => (
+                      <option key={a} value={a} />
+                    ))}
+                  </datalist>
+                  <p className="mt-1 text-[10.5px] leading-snug text-slate-500">
+                    {assuntosHist.length > 0
+                      ? `${assuntosHist.length} assunto(s) já registrados neste condomínio${unidadeAtual ? " / unidade" : ""}. Escolha um da lista ou digite.`
+                      : "Digite o assunto. A multa só se configura, em geral, na reincidência do mesmo tema."}
+                  </p>
                 </div>
               </div>
 
@@ -845,7 +878,7 @@ export function SegmentWorkspace({
               >
                 {analisando ? (
                   <>
-                    <Spinner /> Analisando histórico e regulamento…
+                    <Spinner /> Cruzando regulamento e histórico…
                   </>
                 ) : (
                   <>
@@ -856,97 +889,63 @@ export function SegmentWorkspace({
               <p className="mt-1.5 text-[10.5px] leading-snug text-slate-500">
                 Deixe em branco para usar os valores já preenchidos no documento.
               </p>
+            </div>
+          ) : null}
 
+          {/* Análise de viabilidade / reincidência */}
+          {tipo !== "comunicado" && (analiseErro || analise) ? (
+            <div className="card p-4">
+              <h2 className="text-[14px] font-extrabold text-ink">Viabilidade da multa</h2>
+              <p className="text-[11px] text-slate-500">
+                {condoSelecionado?.nome ? (
+                  <>
+                    <span className="font-bold text-ink">{condoSelecionado.nome}</span>
+                    {" · "}
+                  </>
+                ) : null}
+                Unidade: <span className="font-bold text-ink">{unidadeAtual || "—"}</span>
+                {assuntoAtual ? (
+                  <>
+                    {" · "}Assunto: <span className="font-bold text-ink">{assuntoAtual}</span>
+                  </>
+                ) : null}
+              </p>
               {analiseErro ? (
-                <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                <p role="alert" className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
                   {analiseErro}
                 </p>
               ) : null}
-
               {analise ? (
-                <div className="mt-4 space-y-3 border-t border-line pt-3 text-[12px]">
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${VEREDITO[analise.analise.podeMultar].classe}`}
-                    >
-                      {VEREDITO[analise.analise.podeMultar].rotulo}
-                    </span>
-                    <span className="text-[11px] font-semibold text-slate-500">
-                      Unidade: <strong className="text-ink">{unidadeAtual}</strong>
-                    </span>
-                  </div>
-
+                <div className="mt-3 space-y-3 text-[12px]">
+                  <span
+                    className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${VEREDITO[analise.analise.podeMultar].classe}`}
+                  >
+                    {VEREDITO[analise.analise.podeMultar].rotulo}
+                  </span>
                   {analise.analise.resumo ? (
-                    <p className="leading-snug text-slate-700">{analise.analise.resumo}</p>
+                    <p className="leading-snug text-slate-600">{analise.analise.resumo}</p>
                   ) : null}
 
-                  {/* Destaque da Reincidência do Mesmo Assunto */}
-                  <div
-                    className={`rounded-lg border p-3 ${
-                      analise.analise.reincidencia.reincidenteMesmoAssunto
-                        ? "border-success/30 bg-success-soft/60"
-                        : analise.analise.reincidencia.ocorrenciasAnteriores > 0
-                          ? "border-brand/40 bg-brand-soft/70"
-                          : "border-line bg-paper/60"
-                    }`}
-                  >
-                    <p className="label !mb-1">Análise de reincidência por assunto</p>
-                    <div className="flex items-start gap-2">
-                      <span className="mt-0.5">
-                        <Icon
-                          name={
-                            analise.analise.reincidencia.reincidenteMesmoAssunto
-                              ? "check"
-                              : analise.analise.reincidencia.ocorrenciasAnteriores > 0
-                                ? "alert"
-                                : "file"
-                          }
-                          className={`h-4 w-4 ${
-                            analise.analise.reincidencia.reincidenteMesmoAssunto
-                              ? "text-success"
-                              : analise.analise.reincidencia.ocorrenciasAnteriores > 0
-                                ? "text-brand-dark"
-                                : "text-slate-500"
-                          }`}
-                        />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p
-                          className={`font-extrabold ${
-                            analise.analise.reincidencia.reincidenteMesmoAssunto
-                              ? "text-success"
-                              : analise.analise.reincidencia.ocorrenciasAnteriores > 0
-                                ? "text-brand-dark"
-                                : "text-ink"
-                          }`}
-                        >
-                          {analise.analise.reincidencia.reincidenteMesmoAssunto
-                            ? `Reincidência no mesmo assunto: SIM (${analise.analise.reincidencia.ocorrenciasMesmoAssunto} anterior)`
-                            : analise.analise.reincidencia.ocorrenciasAnteriores > 0
-                              ? "Sem reincidência do mesmo assunto (ocorrências de assuntos diferentes)"
-                              : "Primeira ocorrência registrada (sem registros anteriores)"}
-                        </p>
-                        {analise.analise.reincidencia.protocolosMesmoAssunto.length > 0 ? (
-                          <p className="mt-0.5 text-[11px] text-slate-700">
-                            Protocolos anteriores do mesmo assunto:{" "}
-                            <strong>
-                              {analise.analise.reincidencia.protocolosMesmoAssunto.join(", ")}
-                            </strong>
-                          </p>
-                        ) : null}
-                        {analise.analise.reincidencia.ocorrenciasOutrosAssuntos > 0 ? (
-                          <p className="mt-0.5 text-[11px] text-slate-600">
-                            Ocorrências sobre outros assuntos no histórico:{" "}
-                            {analise.analise.reincidencia.ocorrenciasOutrosAssuntos}
-                          </p>
-                        ) : null}
-                        {analise.analise.reincidencia.criterio ? (
-                          <p className="mt-1 text-[11px] leading-snug text-slate-600">
-                            {analise.analise.reincidencia.criterio}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
+                  <div className="rounded-lg border border-line bg-paper/60 p-3">
+                    <p className="label">Reincidência</p>
+                    <p className="font-bold text-ink">
+                      {analise.analise.reincidencia.reincidente
+                        ? "Reincidente no mesmo assunto"
+                        : "Sem reincidência do mesmo assunto"}{" "}
+                      · {analise.historico.filter((h) => h.mesmoAssunto).length} do mesmo assunto
+                      {" · "}
+                      {analise.historico.length} registro(s) da unidade
+                    </p>
+                    {analise.analise.reincidencia.ultimaOcorrencia ? (
+                      <p className="mt-0.5 text-slate-600">
+                        Última: {analise.analise.reincidencia.ultimaOcorrencia}
+                      </p>
+                    ) : null}
+                    {analise.analise.reincidencia.criterio ? (
+                      <p className="mt-1 leading-snug text-slate-500">
+                        {analise.analise.reincidencia.criterio}
+                      </p>
+                    ) : null}
                   </div>
 
                   {analise.analise.requisitos.length > 0 ? (
@@ -954,7 +953,7 @@ export function SegmentWorkspace({
                       <p className="label">Checklist do regulamento</p>
                       <ul className="space-y-1.5">
                         {analise.analise.requisitos.map((r, i) => (
-                          <li key={i} className="rounded-lg border border-line bg-white px-3 py-2">
+                          <li key={i} className="rounded-lg border border-line px-3 py-2">
                             <p className="flex items-center justify-between gap-2">
                               <span className="font-bold text-ink">{r.item}</span>
                               <span
@@ -982,45 +981,27 @@ export function SegmentWorkspace({
 
                   {analise.historico.length > 0 ? (
                     <div>
-                      <p className="label">Histórico da unidade no sistema ({analise.historico.length})</p>
-                      <ul className="max-h-56 space-y-1.5 overflow-y-auto">
-                        {analise.historico.map((h) => {
-                          const ehMesmoAssunto =
-                            analise.analise.reincidencia.protocolosMesmoAssunto.includes(h.numero);
-                          return (
-                            <li
-                              key={h.id}
-                              className={`rounded-lg border p-2.5 ${
-                                ehMesmoAssunto
-                                  ? "border-success/30 bg-success-soft/30"
-                                  : "border-line bg-paper/60"
-                              }`}
+                      <p className="label">Histórico encontrado no sistema</p>
+                      <ul className="space-y-1.5">
+                        {analise.historico.map((h) => (
+                          <li key={h.id} className="rounded-lg bg-paper px-3 py-2">
+                            <Link
+                              href={`/${h.tipo === "multa" ? "multa" : "notificacao"}?id=${h.id}`}
+                              className="font-mono text-[10.5px] font-bold text-brand-dark hover:underline"
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <Link
-                                  href={`/${h.tipo === "multa" ? "multa" : "notificacao"}?id=${h.id}`}
-                                  className="font-mono text-[11px] font-bold text-brand-dark hover:underline"
-                                >
-                                  {h.numero}
-                                </Link>
-                                <span className="flex items-center gap-1.5">
-                                  {ehMesmoAssunto ? (
-                                    <span className="rounded-full bg-success px-1.5 py-0.2 text-[9px] font-bold text-white uppercase">
-                                      Mesmo assunto
-                                    </span>
-                                  ) : null}
-                                  <span className="text-[10px] text-slate-400">
-                                    {h.tipo === "multa" ? "Multa" : "Notificação"} · {h.data}
-                                  </span>
-                                </span>
-                              </div>
-                              <p className="mt-1 font-semibold text-ink">{h.assunto}</p>
-                              {h.resumo ? (
-                                <p className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">{h.resumo}</p>
-                              ) : null}
-                            </li>
-                          );
-                        })}
+                              {h.numero}
+                            </Link>
+                            <span className="ml-2 text-[10.5px] text-slate-400">
+                              {h.tipo === "multa" ? "Multa" : "Notificação"} · {h.data} · {h.status}
+                            </span>
+                            {h.mesmoAssunto ? (
+                              <span className="ml-2 rounded-full bg-brand-soft px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.08em] text-brand-dark">
+                                Mesmo assunto
+                              </span>
+                            ) : null}
+                            <p className="mt-0.5 leading-snug text-slate-600">{h.assunto}</p>
+                          </li>
+                        ))}
                       </ul>
                     </div>
                   ) : (
@@ -1031,7 +1012,7 @@ export function SegmentWorkspace({
 
                   {analise.analise.fundamentos.length > 0 ? (
                     <div>
-                      <p className="label">Fundamentos no regulamento</p>
+                      <p className="label">Fundamentos</p>
                       <ul className="space-y-1.5">
                         {analise.analise.fundamentos.map((f, i) => (
                           <li key={i} className="rounded-lg bg-success-soft px-3 py-1.5 leading-snug text-success">
@@ -1043,20 +1024,17 @@ export function SegmentWorkspace({
                   ) : null}
 
                   {analise.analise.alertas.length > 0 ? (
-                    <div>
-                      <p className="label">Pontos de atenção</p>
-                      <ul className="space-y-1.5">
-                        {analise.analise.alertas.map((a, i) => (
-                          <li
-                            key={i}
-                            className="flex gap-1.5 rounded-lg bg-brand-soft px-3 py-1.5 leading-snug text-brand-dark"
-                          >
-                            <Icon name="alert" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                            <span>{a}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    <ul className="space-y-1.5">
+                      {analise.analise.alertas.map((a, i) => (
+                        <li
+                          key={i}
+                          className="flex gap-1.5 rounded-lg bg-brand-soft px-3 py-1.5 leading-snug text-brand-dark"
+                        >
+                          <Icon name="alert" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>{a}</span>
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
 
                   {analise.analise.proximosPassos.length > 0 ? (
@@ -1071,13 +1049,14 @@ export function SegmentWorkspace({
                   ) : null}
 
                   {analise.analise.sugestoesCampos.length > 0 ? (
-                    <button type="button" className="btn btn-ghost btn-sm w-full" onClick={aplicarSugestoes}>
-                      <Icon name="check" className="h-3.5 w-3.5" /> Aplicar sugestões no quadro do documento
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={aplicarSugestoes}>
+                      <Icon name="check" className="h-3.5 w-3.5" /> Aplicar sugestões no quadro do
+                      documento
                     </button>
                   ) : null}
-
-                  <p className="text-[10px] leading-snug text-slate-400">
-                    Análise de apoio gerada por IA cruzando a documentação do condomínio e o histórico de ocorrências.
+                  <p className="text-[10.5px] leading-snug text-slate-400">
+                    Análise de apoio gerada por IA a partir dos documentos e registros do sistema.
+                    Confirme com o responsável jurídico antes de aplicar a penalidade.
                   </p>
                 </div>
               ) : null}

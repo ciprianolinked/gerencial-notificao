@@ -4,7 +4,7 @@ import { documentosEmitidos } from "@/db/schema";
 import { dataCurta } from "./format";
 import { modeloFabrica } from "./modelos";
 import type { DocData } from "./types";
-import { destinatarioDe, mesmaUnidade, sanitizeDoc, unidadeDe } from "./types";
+import { destinatarioDe, mesmaUnidade, mesmoAssunto, sanitizeDoc, unidadeDe } from "./types";
 
 export type HistoricoItem = {
   id: string;
@@ -17,14 +17,21 @@ export type HistoricoItem = {
   assunto: string;
   valor: string;
   resumo: string;
+  mesmoAssunto: boolean;
 };
 
-/** Notificações e multas já registradas para a mesma unidade do condomínio. */
-export async function buscarHistorico(
-  condominioId: string,
-  unidade: string,
-  excluirId?: string | null,
-): Promise<HistoricoItem[]> {
+export type BuscaHistorico = {
+  condominioId: string;
+  unidade?: string;
+  assunto?: string;
+  excluirId?: string | null;
+};
+
+/** Notificações e multas já registradas no condomínio, opcionalmente da mesma unidade. */
+export async function buscarHistorico(opts: BuscaHistorico): Promise<HistoricoItem[]> {
+  const { condominioId, unidade, assunto, excluirId } = opts;
+  const assuntoAlvo = assunto?.trim() ?? "";
+
   const rows = await db
     .select({
       id: documentosEmitidos.id,
@@ -43,7 +50,7 @@ export async function buscarHistorico(
       ),
     )
     .orderBy(desc(documentosEmitidos.criadoEm))
-    .limit(120);
+    .limit(200);
 
   const itens: HistoricoItem[] = [];
   for (const r of rows) {
@@ -51,7 +58,10 @@ export async function buscarHistorico(
     if (excluirId && r.id === excluirId) continue;
     const d: DocData = sanitizeDoc(r.dados, modeloFabrica(r.tipo, ""));
     const unid = unidadeDe(d);
-    if (!mesmaUnidade(unid, unidade)) continue;
+    if (unidade?.trim() && !unid) continue;
+    if (unidade?.trim() && !mesmaUnidade(unid, unidade)) continue;
+
+    const assuntoItem = r.assunto || d.subtitulo || "";
     itens.push({
       id: r.id,
       tipo: r.tipo,
@@ -60,11 +70,12 @@ export async function buscarHistorico(
       data: dataCurta(r.criadoEm),
       unidade: unid,
       destinatario: destinatarioDe(d),
-      assunto: r.assunto,
+      assunto: assuntoItem,
       valor: d.destaque.ativo ? d.destaque.value : "",
       resumo: d.corpo.replace(/\s+/g, " ").slice(0, 900),
+      mesmoAssunto: assuntoAlvo ? mesmoAssunto(`${assuntoItem} ${d.corpo.slice(0, 280)}`, assuntoAlvo) : false,
     });
-    if (itens.length >= 30) break;
+    if (itens.length >= 40) break;
   }
   return itens;
 }
@@ -74,7 +85,9 @@ export function historicoParaPrompt(itens: HistoricoItem[]): string {
   return itens
     .map((h) =>
       [
-        `- ${h.tipo === "multa" ? "MULTA" : "NOTIFICAÇÃO"} ${h.numero} · criada em ${h.data} · status: ${h.status}`,
+        `- ${h.tipo === "multa" ? "MULTA" : "NOTIFICAÇÃO"} ${h.numero} · criada em ${h.data} · status: ${h.status}${
+          h.mesmoAssunto ? " · [MESMO ASSUNTO]" : ""
+        }`,
         `  Unidade: ${h.unidade || "não identificada"}${h.destinatario ? ` · Destinatário: ${h.destinatario}` : ""}`,
         `  Assunto: ${h.assunto}${h.valor ? ` · Valor: ${h.valor}` : ""}`,
         h.resumo ? `  Trecho: ${h.resumo}` : "",
