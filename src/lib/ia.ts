@@ -22,6 +22,8 @@ export type RedigirResultado = {
   saudacao?: string;
   corpo?: string;
   fechamento?: string;
+  legendas?: { rotulo: string; legenda: string }[];
+  galeria?: { titulo: string; posicao: "inicio" | "fim" };
   fundamentos: string[];
   alertas: string[];
 };
@@ -67,6 +69,8 @@ export async function redigirDocumento(input: {
   doc: DocData;
   hoje: string;
   historico?: string;
+  /** Rótulos e legendas atuais das fotos (sem o conteúdo binário). */
+  imagens?: { rotulo: string; legendaAtual: string }[];
 }): Promise<{ resultado: RedigirResultado; documentosUsados: string[] }> {
   const seg = SEGMENTOS[input.tipo];
   const partes = dividirOrcamento(input.docs);
@@ -112,6 +116,15 @@ export async function redigirDocumento(input: {
     fechamento: input.doc.fechamento,
   };
 
+  const blocoFotos = (input.imagens ?? []).length
+    ? (input.imagens ?? [])
+        .map(
+          (f) =>
+            `${f.rotulo}${f.legendaAtual.trim() ? ` (legenda atual: ${f.legendaAtual.trim()})` : ""}`,
+        )
+        .join("\n")
+    : "(nenhuma foto anexada)";
+
   const prompt = `${blocoDocs}
 
 ##############################
@@ -134,6 +147,9 @@ Use este histórico para verificar reincidência e coerência com notificações
 MODELO PADRÃO ATUAL (estrutura e estilo a seguir; os trechos [entre colchetes] são lacunas a preencher)
 ${JSON.stringify(modelo, null, 2)}
 
+FOTOS ANEXADAS AO DOCUMENTO (o usuário anexou imagens que serão exibidas no documento)
+${blocoFotos}
+
 ESQUEMA DA RESPOSTA (JSON)
 {
   "titulo": "string (título do documento, em maiúsculas)",
@@ -143,6 +159,8 @@ ESQUEMA DA RESPOSTA (JSON)
   "saudacao": "string",
   "corpo": "string — parágrafos separados por linha em branco (\\n\\n); títulos de seção em maiúsculas na primeira linha do parágrafo, como no modelo",
   "fechamento": "string",
+  "legendas": [{ "rotulo": "string — o mesmo rótulo da foto (ex.: FOTO 1)", "legenda": "string — legenda objetiva, até 90 caracteres, descrevendo o que se vê" }],
+  "galeria": { "titulo": "string — título do bloco de fotos (ex.: Registro fotográfico); string vazia se não quiser título", "posicao": "inicio" | "fim" },
   "fundamentos": ["string — cada norma usada, no formato: Documento, art./cláusula: resumo do que estabelece"],
   "alertas": ["string — pontos que o responsável deve conferir, lacunas e informações não encontradas"]
 }`;
@@ -156,6 +174,7 @@ ESQUEMA DA RESPOSTA (JSON)
   const j = lerJson(texto);
 
   const s = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v : undefined);
+  const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
   const lista = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
 
@@ -171,6 +190,18 @@ ESQUEMA DA RESPOSTA (JSON)
     : undefined;
 
   const dj = j.destaque && typeof j.destaque === "object" ? (j.destaque as Record<string, unknown>) : null;
+
+  const legendas = Array.isArray(j.legendas)
+    ? j.legendas
+        .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+        .map((x) => ({
+          rotulo: str(x.rotulo).toUpperCase().replace(/^FOTO\s*/, "FOTO "),
+          legenda: str(x.legenda).slice(0, 120),
+        }))
+        .filter((x) => x.rotulo && x.legenda)
+    : undefined;
+
+  const gj = j.galeria && typeof j.galeria === "object" ? (j.galeria as Record<string, unknown>) : null;
 
   return {
     resultado: {
@@ -188,6 +219,13 @@ ESQUEMA DA RESPOSTA (JSON)
       saudacao: s(j.saudacao),
       corpo: s(j.corpo),
       fechamento: s(j.fechamento),
+      legendas,
+      galeria: gj
+        ? {
+            titulo: typeof gj.titulo === "string" ? gj.titulo.slice(0, 80) : "",
+            posicao: gj.posicao === "inicio" ? "inicio" : "fim",
+          }
+        : undefined,
       fundamentos: lista(j.fundamentos),
       alertas: lista(j.alertas),
     },

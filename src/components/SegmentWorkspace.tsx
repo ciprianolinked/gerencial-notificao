@@ -249,8 +249,13 @@ export function SegmentWorkspace({
           condominioId: condominioId || null,
           briefing,
           dados: dadosIA,
-          doc: { ...doc, logoDataUrl: "" },
+          doc: { ...doc, logoDataUrl: "", imagens: [] },
           documentoIds: condominioId ? docsUsaveis.map((d) => d.id) : undefined,
+          // Só rótulos e legendas: as fotos em si não vão para a IA.
+          imagens: doc.imagens.map((img, i) => ({
+            rotulo: `FOTO ${i + 1}`,
+            legendaAtual: img.legenda,
+          })),
         }),
       });
       const j = await r.json();
@@ -312,7 +317,7 @@ export function SegmentWorkspace({
           unidade: unidadeAtual,
           assunto: assuntoAtual,
           destinatario: destAtual,
-          doc: { ...doc, logoDataUrl: "" },
+          doc: { ...doc, logoDataUrl: "", imagens: [] },
           docId,
           briefing,
         }),

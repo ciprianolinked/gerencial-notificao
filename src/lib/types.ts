@@ -3,8 +3,22 @@ export type TipoDoc = "notificacao" | "multa" | "comunicado";
 export const TIPOS: TipoDoc[] = ["notificacao", "multa", "comunicado"];
 
 export type Campo = { id: string; label: string; value: string };
+
 export type Assinatura = { id: string; nome: string; cargo: string };
 export type Destaque = { ativo: boolean; label: string; value: string; nota: string };
+
+/** Foto anexada ao documento (comunicado, notificação ou multa). */
+export type ImagemDoc = {
+  id: string;
+  /** data URL da imagem já reduzida (JPEG/PNG/WebP). */
+  dataUrl: string;
+  legenda: string;
+  /** "inteira" ocupa a largura do texto; "meia" fica em coluna dupla. */
+  largura: "inteira" | "meia";
+};
+
+/** Bloco de fotos: título e posição escolhidos pela IA (editáveis depois). */
+export type Galeria = { titulo: string; posicao: "inicio" | "fim" };
 
 /** Estrutura única que descreve qualquer documento (tela, banco e PDF). Tudo é editável. */
 export type DocData = {
@@ -24,6 +38,9 @@ export type DocData = {
   fechamento: string;
   assinaturas: Assinatura[];
   rodape: string;
+  /** Fotos anexadas (até 6). */
+  imagens: ImagemDoc[];
+  galeria: Galeria;
 };
 
 export type CampoIA = {
@@ -154,6 +171,24 @@ export function sanitizeDoc(raw: unknown, base: DocData): DocData {
       ? logoRecebida
       : base.logoDataUrl;
 
+  const imagens = Array.isArray(r.imagens)
+    ? r.imagens
+        .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
+        .map((i) => ({
+          id: str(i.id) || uid(),
+          dataUrl: str(i.dataUrl),
+          legenda: str(i.legenda),
+          largura: i.largura === "meia" ? ("meia" as const) : ("inteira" as const),
+        }))
+        .filter((i) => /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(i.dataUrl))
+        .slice(0, 6)
+    : base.imagens;
+
+  const g = (r.galeria && typeof r.galeria === "object" ? r.galeria : {}) as Record<
+    string,
+    unknown
+  >;
+
   return {
     logoDataUrl,
     titulo: str(r.titulo, base.titulo),
@@ -175,6 +210,11 @@ export function sanitizeDoc(raw: unknown, base: DocData): DocData {
     fechamento: str(r.fechamento, base.fechamento),
     assinaturas,
     rodape: str(r.rodape, base.rodape),
+    imagens,
+    galeria: {
+      titulo: str(g.titulo, base.galeria.titulo),
+      posicao: g.posicao === "inicio" ? ("inicio" as const) : ("fim" as const),
+    },
   };
 }
 

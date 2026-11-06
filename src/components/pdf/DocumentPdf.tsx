@@ -95,6 +95,18 @@ const s = StyleSheet.create({
   destaqueValor: { fontFamily: "Helvetica-Bold", fontSize: 18, color: C.ink, marginTop: 2 },
   destaqueNota: { fontSize: 8.5, color: C.muted, maxWidth: 220, textAlign: "right" },
   saudacao: { marginTop: 16, fontSize: 10.5 },
+  galeria: { marginTop: 14 },
+  galeriaTitulo: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 0.8,
+    color: C.muted,
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  galeriaGrade: { flexDirection: "row", flexWrap: "wrap", gap: 16 },
+  foto: { marginBottom: 12, alignItems: "center" },
+  fotoLegenda: { fontSize: 8.5, color: C.muted, marginTop: 3, textAlign: "center" },
   paragrafo: { fontSize: 10, lineHeight: 1.5, textAlign: "justify", marginBottom: 6 },
   secao: {
     fontFamily: "Helvetica-Bold",
@@ -128,6 +140,84 @@ const s = StyleSheet.create({
   rodapeTexto: { flex: 1, fontSize: 7.5, color: C.muted, paddingRight: 12 },
   rodapePagina: { fontSize: 7.5, color: C.muted },
 });
+
+/** Proporção da imagem para caber na caixa sem distorcer nem estourar a página. */
+function proporcao(dataUrl: string): { largura: number; altura: number } {
+  // data URL de JPEG: lê o marcador SOF para extrair as dimensões.
+  try {
+    const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    let i = 2;
+    while (i < bin.length - 9) {
+      if (bin.charCodeAt(i) !== 0xff) {
+        i++;
+        continue;
+      }
+      const marcador = bin.charCodeAt(i + 1);
+      if (
+        marcador >= 0xc0 &&
+        marcador <= 0xcf &&
+        marcador !== 0xc4 &&
+        marcador !== 0xc8 &&
+        marcador !== 0xcc
+      ) {
+        const altura = (bin.charCodeAt(i + 5) << 8) | bin.charCodeAt(i + 6);
+        const largura = (bin.charCodeAt(i + 7) << 8) | bin.charCodeAt(i + 8);
+        if (largura > 0 && altura > 0) return { largura, altura };
+      }
+      i += 2 + ((bin.charCodeAt(i + 2) << 8) | bin.charCodeAt(i + 3));
+    }
+  } catch {
+    /* usa a proporção padrão */
+  }
+  return { largura: 4, altura: 3 };
+}
+
+function Galeria({ doc }: { doc: DocData }) {
+  if (doc.imagens.length === 0) return null;
+
+  const LARGURA_TEXTO = 503; // A4 (595 pt) menos as margens laterais de 46
+  const COLUNA = (LARGURA_TEXTO - 16) / 2;
+  const MAX_ALTURA = 230;
+
+  return (
+    <View style={s.galeria}>
+      {doc.galeria.titulo.trim() ? (
+        <Text style={s.galeriaTitulo} minPresenceAhead={60}>
+          {doc.galeria.titulo}
+        </Text>
+      ) : null}
+      <View style={s.galeriaGrade}>
+        {doc.imagens.map((img, idx) => {
+          const { largura, altura } = proporcao(img.dataUrl);
+          const caixaMax = img.largura === "meia" ? COLUNA : LARGURA_TEXTO;
+          const escala = Math.min(caixaMax / largura, MAX_ALTURA / altura);
+          return (
+            <View
+              key={img.id}
+              style={[
+                s.foto,
+                img.largura === "meia" ? { width: COLUNA } : { width: LARGURA_TEXTO },
+              ]}
+              wrap={false}
+            >
+              <Image
+                src={img.dataUrl}
+                style={{
+                  width: Math.round(largura * escala),
+                  height: Math.round(altura * escala),
+                  objectFit: "contain",
+                }}
+              />
+              <Text style={s.fotoLegenda}>
+                {img.legenda.trim() ? `Foto ${idx + 1} — ${img.legenda}` : `Foto ${idx + 1}`}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 const ehSecao = (l: string) =>
   l.length >= 4 && l.length <= 90 && l === l.toUpperCase() && /[A-ZÀ-Ú]{3}/.test(l);
@@ -261,10 +351,14 @@ export function DocumentPdf({
           </View>
         ) : null}
 
+        {doc.galeria.posicao === "inicio" ? <Galeria doc={doc} /> : null}
+
         {doc.saudacao.trim() ? <Text style={s.saudacao}>{doc.saudacao}</Text> : null}
         <View style={{ marginTop: 8 }}>
           <Corpo texto={doc.corpo} />
         </View>
+
+        {doc.galeria.posicao === "fim" ? <Galeria doc={doc} /> : null}
 
         <View wrap={false}>
         {doc.fechamento.trim() ? <Text style={s.fechamento}>{doc.fechamento}</Text> : null}

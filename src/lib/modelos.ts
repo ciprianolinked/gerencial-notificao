@@ -24,6 +24,8 @@ const assinaturaCiencia = (): Assinatura => ({
 
 const base = (hoje: string): Omit<DocData, "titulo" | "subtitulo" | "campos" | "destaque" | "saudacao" | "corpo" | "fechamento" | "assinaturas"> => ({
   logoDataUrl: "",
+  imagens: [],
+  galeria: { titulo: "", posicao: "fim" },
   numero: "",
   local: "[Cidade]", 
   data: hoje,
