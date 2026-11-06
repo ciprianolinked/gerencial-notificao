@@ -7,6 +7,7 @@ import { dataPorExtenso } from "@/lib/format";
 import { buscarHistorico, historicoParaPrompt } from "@/lib/historico";
 import { redigirDocumento } from "@/lib/ia";
 import { modeloFabrica } from "@/lib/modelos";
+import { normalizarDocumento } from "@/lib/padrao-documento";
 import { assuntoDe, isTipo, sanitizeDoc, unidadeDe } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,17 @@ export async function POST(req: Request) {
       return erro("Descreva o caso ou preencha ao menos um dos campos para a IA redigir.");
     }
 
-    const doc = sanitizeDoc(body.doc, modeloFabrica(tipo, hoje));
+    const doc = normalizarDocumento(sanitizeDoc(body.doc, modeloFabrica(tipo, hoje)), tipo);
+    const imagens = Array.isArray(body.imagens)
+      ? body.imagens
+          .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+          .map((x) => ({
+            rotulo: typeof x.rotulo === "string" ? x.rotulo.slice(0, 20) : "",
+            legendaAtual: typeof x.legendaAtual === "string" ? x.legendaAtual.slice(0, 160) : "",
+          }))
+          .filter((x) => x.rotulo)
+          .slice(0, 6)
+      : [];
 
     let condominio = null;
     let docs: { nome: string; categoria: string; texto: string }[] = [];
@@ -89,7 +100,7 @@ export async function POST(req: Request) {
       historico = historicoParaPrompt(itens);
     }
 
-    const { resultado, documentosUsados } = await redigirDocumento({
+    const { resultado, documentosUsados, permiteNormasComunicado } = await redigirDocumento({
       tipo,
       condominio,
       docs,
@@ -98,9 +109,10 @@ export async function POST(req: Request) {
       doc,
       hoje,
       historico,
+      imagens,
     });
 
-    return NextResponse.json({ resultado, documentosUsados });
+    return NextResponse.json({ resultado, documentosUsados, permiteNormasComunicado });
   } catch (e) {
     return erroDeExcecao(e);
   }

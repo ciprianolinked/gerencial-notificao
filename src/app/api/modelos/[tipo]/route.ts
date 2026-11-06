@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { modelosPadrao } from "@/db/schema";
 import { erro, erroDeExcecao } from "@/lib/api";
 import { modeloFabrica } from "@/lib/modelos";
+import { normalizarDocumento } from "@/lib/padrao-documento";
 import { isTipo, sanitizeDoc } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function PUT(req: Request, { params }: Ctx) {
     const { tipo } = await params;
     if (!isTipo(tipo)) return erro("Segmento inválido.", 404);
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-    const dados = sanitizeDoc(body?.dados, modeloFabrica(tipo, ""));
+    const dados = normalizarDocumento(sanitizeDoc(body?.dados, modeloFabrica(tipo, "")), tipo);
     dados.numero = "";
     const origem = body?.origem === "importado" ? "importado" : "editor";
 

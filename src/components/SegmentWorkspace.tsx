@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tamanhoLegivel } from "@/lib/format";
 import { modeloFabrica } from "@/lib/modelos";
+import { assuntoEmCaixaDeFrase, normalizarDocumento } from "@/lib/padrao-documento";
 import type { DocData, StatusDoc, TipoDoc } from "@/lib/types";
 import {
   SEGMENTOS,
@@ -73,21 +74,11 @@ type AnaliseResp = {
 };
 
 function aplicarCondo(d: DocData, c: CondoOpt): DocData {
-  const cidadeUf = c.cidade ? `${c.cidade}${c.uf ? `/${c.uf}` : ""}` : "";
-  const endereco = c.endereco ? (cidadeUf ? `${c.endereco} — ${cidadeUf}` : c.endereco) : cidadeUf;
-  const info = [c.cnpj ? `CNPJ ${c.cnpj}` : null, endereco || null].filter(Boolean).join(" · ");
   return {
     ...d,
     condominio: c.nome,
-    condominioInfo: info || d.condominioInfo,
+    condominioInfo: "",
     local: c.cidade || d.local,
-    assinaturas: d.assinaturas.map((a) => {
-      if (a.id === "ass-gestor" && c.gestor) return { ...a, nome: c.gestor };
-      if (a.id === "ass-sindico" && c.sindico) {
-        return { ...a, nome: c.sindico, cargo: `Síndico(a) — ${c.nome}` };
-      }
-      return a;
-    }),
   };
 }
 
@@ -177,7 +168,7 @@ export function SegmentWorkspace({
   };
   const unidadeAtual = efetivo(dadosIA.unidade, unidadeDe(doc));
   const destAtual = efetivo(dadosIA.destinatario, destinatarioDe(doc));
-  const assuntoAtual = efetivo(dadosIA.assunto, assuntoDe(doc));
+  const assuntoAtual = assuntoEmCaixaDeFrase(efetivo(dadosIA.assunto, assuntoDe(doc)));
 
   useEffect(() => {
     if (!condominioId) {
@@ -263,18 +254,37 @@ export function SegmentWorkspace({
         setIaErro(j.erro ?? "Não foi possível redigir com a IA.");
         return;
       }
-      const res = j.resultado as Partial<DocData> & { fundamentos: string[]; alertas: string[] };
+      const res = j.resultado as Partial<DocData> & {
+        fundamentos: string[];
+        alertas: string[];
+        legendas?: { rotulo: string; legenda: string }[];
+        galeria?: { titulo: string; posicao: "inicio" | "fim" };
+      };
+      const permitirNormas = j.permiteNormasComunicado === true;
       setAnterior(doc);
-      setDoc((d) => ({
-        ...d,
-        titulo: res.titulo ?? d.titulo,
-        subtitulo: res.subtitulo ?? d.subtitulo,
-        campos: res.campos ?? d.campos,
-        destaque: res.destaque ?? d.destaque,
-        saudacao: res.saudacao ?? d.saudacao,
-        corpo: res.corpo ?? d.corpo,
-        fechamento: res.fechamento ?? d.fechamento,
-      }));
+      setDoc((d) => {
+        const legendas = res.legendas ?? [];
+        const imagens = d.imagens.map((img, i) => {
+          const sugestao = legendas.find((l) => l.rotulo === `FOTO ${i + 1}`);
+          return sugestao ? { ...img, legenda: sugestao.legenda } : img;
+        });
+        return normalizarDocumento(
+          {
+            ...d,
+            titulo: res.titulo ?? d.titulo,
+            subtitulo: res.subtitulo ?? d.subtitulo,
+            campos: res.campos ?? d.campos,
+            destaque: res.destaque ?? d.destaque,
+            saudacao: res.saudacao ?? d.saudacao,
+            corpo: res.corpo ?? d.corpo,
+            imagens,
+            galeria: { titulo: res.galeria?.titulo ?? d.galeria.titulo, posicao: "fim" },
+            normasSolicitadas: permitirNormas,
+          },
+          tipo,
+          { permitirNormasComunicado: permitirNormas },
+        );
+      });
       setAlterado(true);
       setIaInfo({
         fundamentos: res.fundamentos ?? [],
@@ -360,11 +370,12 @@ export function SegmentWorkspace({
   async function salvar() {
     setSalvando(true);
     try {
+      const dadosSalvar = normalizarDocumento(doc, tipo);
       const payload = JSON.stringify({
         tipo,
         condominioId: condominioId || null,
         status,
-        dados: doc,
+        dados: dadosSalvar,
       });
       const r = await fetch(docId ? `/api/emitidos/${docId}` : "/api/emitidos", {
         method: docId ? "PUT" : "POST",
@@ -377,10 +388,10 @@ export function SegmentWorkspace({
         return;
       }
       const id = (j.id ?? docId) as string;
-      setDoc((d) => ({ ...d, numero: j.numero }));
+      setDoc((d) => normalizarDocumento({ ...d, numero: j.numero }, tipo));
       setDocId(id);
       setAlterado(false);
-      setLista((l) => [itemDe({ ...doc, numero: j.numero }, id, j.numero, status), ...l.filter((x) => x.id !== id)]);
+      setLista((l) => [itemDe(normalizarDocumento({ ...doc, numero: j.numero }, tipo), id, j.numero, status), ...l.filter((x) => x.id !== id)]);
       window.history.replaceState(null, "", `/${seg.slug}?id=${id}`);
       avisar("ok", `${seg.nome} ${j.numero} salva.`);
     } catch {
@@ -441,7 +452,7 @@ export function SegmentWorkspace({
     setPdfCarregando(true);
     try {
       const { baixarPdf } = await import("@/components/pdf/gerarPdf");
-      await baixarPdf(doc, seg.prefixo, condoSelecionado?.logoUrl ?? null);
+      await baixarPdf(doc, tipo, condoSelecionado?.logoUrl ?? null);
       avisar("ok", "PDF gerado e salvo no seu dispositivo.");
     } catch (e) {
       console.error(e);
@@ -489,7 +500,7 @@ export function SegmentWorkspace({
       avisar("erro", "Não foi possível salvar o modelo padrão.");
       return;
     }
-    setModeloAtual({ ...doc, numero: "" });
+    setModeloAtual(normalizarDocumento({ ...doc, numero: "" }, tipo));
     setPersonalizado(true);
     avisar("ok", "Modelo padrão atualizado.");
   }
@@ -527,12 +538,19 @@ export function SegmentWorkspace({
         return;
       }
       const p = (j.parcial ?? {}) as Partial<DocData>;
-      setDoc((d) => ({
-        ...d,
-        ...p,
-        campos: p.campos ?? d.campos,
-        destaque: p.destaque ?? d.destaque,
-      }));
+      setDoc((d) =>
+        normalizarDocumento(
+          {
+            ...d,
+            ...p,
+            campos: p.campos ?? d.campos,
+            destaque: p.destaque ?? d.destaque,
+            imagens: d.imagens,
+            galeria: { ...d.galeria, posicao: "fim" },
+          },
+          tipo,
+        ),
+      );
       setAlterado(true);
       avisar(
         "ok",
@@ -1180,12 +1198,12 @@ export function SegmentWorkspace({
           </div>
 
           <p className="no-print mb-3 text-[11.5px] text-slate-500">
-            Todos os campos do documento são editáveis: clique diretamente no texto da folha para
-            alterar títulos, rótulos, valores, parágrafos e assinaturas.
+            Formato A4 (210 × 297 mm). Edite títulos, campos e texto diretamente na folha.
+            Fotos entram após o texto; fechamento, canais e assinatura da Gerencial são automáticos.
             {condoSelecionado?.logoUrl ? " A logo do condomínio já está no cabeçalho." : ""}
           </p>
 
-          <DocumentPaper doc={doc} onChange={alterar} logoUrl={condoSelecionado?.logoUrl ?? null} />
+          <DocumentPaper doc={doc} tipo={tipo} onChange={alterar} logoUrl={condoSelecionado?.logoUrl ?? null} />
         </section>
       </div>
 

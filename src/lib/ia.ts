@@ -1,6 +1,13 @@
 import { chamarGemini, lerJson } from "./gemini";
+import { modeloFabrica } from "./modelos";
+import {
+  assuntoEmCaixaDeFrase,
+  limparTextoInformativo,
+  normalizarDocumento,
+  pedidoExplicitoDeNormas,
+} from "./padrao-documento";
 import type { DocData, TipoDoc } from "./types";
-import { SEGMENTOS, uid } from "./types";
+import { SEGMENTOS, normalizarTexto, uid } from "./types";
 
 export type CondominioCtx = {
   nome: string;
@@ -48,17 +55,18 @@ export function dividirOrcamento(docs: DocCtx[]): { doc: DocCtx; texto: string; 
   return saida.sort((a, b) => a.i - b.i);
 }
 
-const SISTEMA = `Você é redator(a) sênior da Gerencial — Governança Condominial, administradora de condomínios no Brasil. Você redige notificações, multas e comunicados formais, claros, objetivos e juridicamente prudentes, em português do Brasil.
+const SISTEMA = `Você é redator(a) sênior da Gerencial Governança ADM & Gestão Condominial, administradora de condomínios no Brasil. Redige notificações, multas e comunicados formais, claros e objetivos em português do Brasil.
 
 REGRAS OBRIGATÓRIAS
-1. Use SOMENTE os fatos fornecidos pelo usuário. Nunca invente nomes, datas, valores, números de artigos, números de protocolo ou fatos. Quando faltar uma informação, mantenha um marcador entre colchetes, por exemplo [data da ocorrência].
-2. Fundamente o texto nos DOCUMENTOS DO CONDOMÍNIO fornecidos (Convenção, Regimento Interno, atas etc.). Cite artigo, cláusula ou item SOMENTE se ele constar nos documentos, transcrevendo ou parafraseando fielmente. Se não encontrar norma aplicável, não invente: use [art. __] e registre o ponto em "alertas".
-3. Referências legais gerais (Código Civil, arts. 1.336 e 1.337; LGPD) só podem ser citadas quando pertinentes e sem alterar seu sentido.
-4. Tom respeitoso, impessoal e firme, sem acusações exageradas. Em notificações e multas, assegure o contraditório e a ampla defesa e informe prazos.
-5. Siga a estrutura do MODELO PADRÃO recebido (mesmos campos do quadro de identificação e mesmas seções do corpo), adaptando o conteúdo ao caso. Você pode acrescentar ou remover linhas do quadro quando necessário.
-6. Em multas, preencha o valor somente se o usuário informou ou se os documentos o definem objetivamente (valor fixo ou múltiplo da taxa condominial). Caso contrário, mantenha [valor].
-7. Não inclua assinaturas, local, data ou número do documento: eles são tratados pelo sistema.
-8. Responda SOMENTE com JSON válido no esquema solicitado, sem comentários.`;
+1. Use SOMENTE os fatos fornecidos pelo usuário. Nunca invente nomes, datas, valores, artigos, protocolos ou fatos. Informação ausente fica entre colchetes, por exemplo [data da ocorrência].
+2. Siga a estrutura do MODELO PADRÃO recebido, adaptando o conteúdo ao caso. Não crie campo "Destinatário" nem "Destinatários" no quadro de identificação.
+3. O valor do campo "Assunto" (e "Infração", quando existir) deve ter apenas a primeira palavra com inicial maiúscula; as demais palavras em minúsculas.
+4. Em multas, preencha o valor somente se o usuário informou ou se os documentos o definem objetivamente. Caso contrário, mantenha [valor].
+5. Em notificações e multas, assegure contraditório, ampla defesa e prazos.
+6. NÃO escreva "Atenciosamente", "Cordialmente", "Respeitosamente", "Att.", agradecimentos de despedida ou similares no fim do corpo. O sistema insere o fechamento automaticamente.
+7. Não inclua assinaturas, ciência do destinatário, canais de comunicação, local, data ou número do documento no corpo: o sistema cuida desses blocos.
+8. As fotos são exibidas pelo sistema APÓS o texto. Não coloque marcadores de imagem no corpo e não sugira fotos antes do texto.
+9. Responda SOMENTE com JSON válido no esquema solicitado, sem comentários.`;
 
 export async function redigirDocumento(input: {
   tipo: TipoDoc;
@@ -71,32 +79,37 @@ export async function redigirDocumento(input: {
   historico?: string;
   /** Rótulos e legendas atuais das fotos (sem o conteúdo binário). */
   imagens?: { rotulo: string; legendaAtual: string }[];
-}): Promise<{ resultado: RedigirResultado; documentosUsados: string[] }> {
+}): Promise<{ resultado: RedigirResultado; documentosUsados: string[]; permiteNormasComunicado: boolean }> {
   const seg = SEGMENTOS[input.tipo];
-  const partes = dividirOrcamento(input.docs);
+  const permiteNormasComunicado =
+    input.tipo !== "comunicado" ||
+    pedidoExplicitoDeNormas(input.briefing, ...Object.values(input.dados));
+  const informativo = input.tipo === "comunicado" && !permiteNormasComunicado;
+  const partes = informativo ? [] : dividirOrcamento(input.docs);
 
-  const blocoDocs = partes.length
-    ? partes
-        .map(
-          (p) =>
-            `=== DOCUMENTO: ${p.doc.nome} (${p.doc.categoria})${p.cortado ? " [trecho inicial]" : ""} ===\n${p.texto}`,
-        )
-        .join("\n\n")
-    : "(Nenhum documento com texto foi enviado para este condomínio. Não cite artigos: use [art. __] e avise em \"alertas\".)";
+  const blocoDocs = informativo
+    ? "(Comunicado exclusivamente informativo: nenhum documento normativo foi fornecido. Não mencione regulamento, convenção, regimento, atas, artigos, leis ou outros documentos.)"
+    : partes.length
+      ? partes
+          .map(
+            (p) =>
+              `=== DOCUMENTO: ${p.doc.nome} (${p.doc.categoria})${p.cortado ? " [trecho inicial]" : ""} ===\n${p.texto}`,
+          )
+          .join("\n\n")
+      : "(Nenhum documento com texto foi enviado para este condomínio. Não cite artigos: use [art. __] e avise em \"alertas\".)";
 
-  const c = input.condominio;
-  const blocoCondo = c
-    ? [
-        `Nome: ${c.nome}`,
-        c.cnpj ? `CNPJ: ${c.cnpj}` : null,
-        c.endereco ? `Endereço: ${c.endereco}` : null,
-        c.cidade ? `Cidade/UF: ${c.cidade}${c.uf ? `/${c.uf}` : ""}` : null,
-        c.sindico ? `Síndico(a): ${c.sindico}` : null,
-        c.gestor ? `Gestor(a) Gerencial: ${c.gestor}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n")
-    : "(condomínio não selecionado)";
+  // No documento, o bloco do condomínio mostra apenas o nome.
+  const blocoCondo = input.condominio?.nome ?? "(condomínio não selecionado)";
+  const regrasSegmento = informativo
+    ? `MODO INFORMATIVO DO COMUNICADO
+- O texto deve ser apenas informativo, com base no relato e nos dados do usuário.
+- Não mencione regulamento, convenção, regimento interno, atas, artigos, cláusulas, leis, Código Civil, normas ou "documentos do condomínio".
+- Não acrescente pedidos de cumprimento de normas nem fundamentos jurídicos.
+- Deixe "fundamentos" vazio. Se o usuário pediu expressamente uma referência normativa, esta instrução não se aplicaria; nesse caso os documentos teriam sido fornecidos acima.`
+    : `FUNDAMENTAÇÃO
+- Fundamente notificações, multas ou comunicados com referências expressamente solicitadas nos documentos fornecidos.
+- Cite artigo/cláusula somente se constar nos documentos; não invente. Se faltar norma, use [art. __] e registre em "alertas".
+- Referências legais gerais só quando pertinentes e sem alterar seu sentido.`;
 
   const dadosInformados = Object.entries(input.dados)
     .filter(([, v]) => v.trim())
@@ -109,11 +122,17 @@ export async function redigirDocumento(input: {
   const modelo = {
     titulo: input.doc.titulo,
     subtitulo: input.doc.subtitulo,
-    campos: input.doc.campos.map((x) => ({ label: x.label, value: x.value })),
+    campos: input.doc.campos
+      .filter((x) => !/^destinatarios?$/.test(normalizarTexto(x.label)))
+      .map((x) => ({
+        label: x.label,
+        value: /^(assunto|infracao)$/.test(normalizarTexto(x.label))
+          ? assuntoEmCaixaDeFrase(x.value)
+          : x.value,
+      })),
     destaque: input.doc.destaque,
     saudacao: input.doc.saudacao,
     corpo: input.doc.corpo,
-    fechamento: input.doc.fechamento,
   };
 
   const blocoFotos = (input.imagens ?? []).length
@@ -131,7 +150,9 @@ export async function redigirDocumento(input: {
 TAREFA: redigir ${seg.nome.toUpperCase()} do condomínio abaixo.
 Data de hoje: ${input.hoje}
 
-CONDOMÍNIO
+${regrasSegmento}
+
+CONDOMÍNIO (exibir apenas o nome no documento)
 ${blocoCondo}
 
 DADOS INFORMADOS PELO USUÁRIO
@@ -157,10 +178,9 @@ ESQUEMA DA RESPOSTA (JSON)
   "campos": [{ "label": "string", "value": "string" }],
   "destaque": { "ativo": boolean, "label": "string", "value": "string", "nota": "string" },
   "saudacao": "string",
-  "corpo": "string — parágrafos separados por linha em branco (\\n\\n); títulos de seção em maiúsculas na primeira linha do parágrafo, como no modelo",
-  "fechamento": "string",
+  "corpo": "string — parágrafos separados por linha em branco (\\n\\n), SEM despedida final; títulos de seção em maiúsculas na primeira linha do parágrafo, como no modelo",
   "legendas": [{ "rotulo": "string — o mesmo rótulo da foto (ex.: FOTO 1)", "legenda": "string — legenda objetiva, até 90 caracteres, descrevendo o que se vê" }],
-  "galeria": { "titulo": "string — título do bloco de fotos (ex.: Registro fotográfico); string vazia se não quiser título", "posicao": "inicio" | "fim" },
+  "galeria": { "titulo": "string — título do bloco de fotos (ex.: Registro fotográfico); string vazia se não quiser título", "posicao": "fim" },
   "fundamentos": ["string — cada norma usada, no formato: Documento, art./cláusula: resumo do que estabelece"],
   "alertas": ["string — pontos que o responsável deve conferir, lacunas e informações não encontradas"]
 }`;
@@ -203,47 +223,68 @@ ESQUEMA DA RESPOSTA (JSON)
 
   const gj = j.galeria && typeof j.galeria === "object" ? (j.galeria as Record<string, unknown>) : null;
 
+  const destaque = dj
+    ? {
+        ativo: typeof dj.ativo === "boolean" ? dj.ativo : input.doc.destaque.ativo,
+        label: s(dj.label) ?? input.doc.destaque.label,
+        value: typeof dj.value === "string" ? dj.value : input.doc.destaque.value,
+        nota: typeof dj.nota === "string" ? dj.nota : input.doc.destaque.nota,
+      }
+    : input.doc.destaque;
+
+  // Rede de segurança: mesmo que o modelo devolva campos/blocos antigos,
+  // o resultado aplicado ao editor já sai no padrão institucional atual.
+  const normalizado = normalizarDocumento(
+    {
+      ...input.doc,
+      titulo: s(j.titulo) ?? input.doc.titulo,
+      subtitulo: s(j.subtitulo) ?? input.doc.subtitulo,
+      campos: campos && campos.length ? campos : input.doc.campos,
+      destaque,
+      saudacao: s(j.saudacao) ?? input.doc.saudacao,
+      corpo: s(j.corpo) ?? input.doc.corpo,
+      normasSolicitadas: permiteNormasComunicado,
+    },
+    input.tipo,
+    { permitirNormasComunicado: permiteNormasComunicado },
+  );
+
   return {
     resultado: {
-      titulo: s(j.titulo),
-      subtitulo: s(j.subtitulo),
-      campos: campos && campos.length ? campos : undefined,
-      destaque: dj
-        ? {
-            ativo: typeof dj.ativo === "boolean" ? dj.ativo : input.doc.destaque.ativo,
-            label: s(dj.label) ?? input.doc.destaque.label,
-            value: typeof dj.value === "string" ? dj.value : input.doc.destaque.value,
-            nota: typeof dj.nota === "string" ? dj.nota : input.doc.destaque.nota,
-          }
-        : undefined,
-      saudacao: s(j.saudacao),
-      corpo: s(j.corpo),
-      fechamento: s(j.fechamento),
+      titulo: normalizado.titulo,
+      subtitulo: normalizado.subtitulo,
+      campos: normalizado.campos,
+      destaque: normalizado.destaque,
+      saudacao: normalizado.saudacao,
+      corpo: normalizado.corpo,
       legendas,
-      galeria: gj
-        ? {
-            titulo: typeof gj.titulo === "string" ? gj.titulo.slice(0, 80) : "",
-            posicao: gj.posicao === "inicio" ? "inicio" : "fim",
-          }
-        : undefined,
-      fundamentos: lista(j.fundamentos),
-      alertas: lista(j.alertas),
+      galeria: {
+        titulo: gj && typeof gj.titulo === "string" ? gj.titulo.slice(0, 80) : input.doc.galeria.titulo,
+        posicao: "fim",
+      },
+      fundamentos: informativo ? [] : lista(j.fundamentos),
+      alertas: informativo
+        ? lista(j.alertas).map(limparTextoInformativo).filter(Boolean)
+        : lista(j.alertas),
     },
     documentosUsados: partes.map((p) => p.doc.nome),
+    permiteNormasComunicado,
   };
 }
 
-/** Converte o texto de um modelo enviado (PDF/DOCX/TXT) na estrutura editável do segmento. */
+/** Converte o texto de um modelo enviado na estrutura editável já no padrão atual. */
 export async function estruturarModelo(
   tipo: TipoDoc,
   textoModelo: string,
 ): Promise<Partial<RedigirResultado>> {
   const seg = SEGMENTOS[tipo];
-  const prompt = `Abaixo está o texto de um modelo de ${seg.nome.toLowerCase()} usado pela Gerencial. Converta-o para a estrutura JSON do editor, SEM reescrever ou resumir o conteúdo: preserve a redação original.
-- Dados que mudam a cada caso (nomes, unidades, datas, valores, artigos) devem virar lacunas entre colchetes, ex.: [nome do morador].
-- "campos" é o quadro de identificação (pares rótulo/valor como Destinatário, Unidade, Assunto etc.). Se o modelo não tiver quadro, crie-o a partir das informações principais.
-- "corpo" contém os parágrafos, separados por linha em branco.
-- Não inclua assinaturas, local, data ou número.
+  const prompt = `Converta o texto de um modelo de ${seg.nome.toLowerCase()} da Gerencial para JSON do editor, preservando os fatos e a redação útil.
+- Dados variáveis viram lacunas entre colchetes.
+- "campos" é o quadro de identificação (Unidade, Assunto, datas etc.). NÃO inclua Destinatário/Destinatários.
+- Assunto/Infração: apenas a primeira palavra com inicial maiúscula.
+- "corpo": parágrafos separados por linha em branco, sem despedida final.
+- Não inclua assinaturas, canais, fechamento, local, data ou número.
+${tipo === "comunicado" ? "- Comunicado informativo: remova menções a regulamento, convenção, regimento, atas, artigos, leis e outros documentos, salvo se o próprio texto do modelo contiver pedido expresso do usuário para mantê-los." : ""}
 
 TEXTO DO MODELO
 """
@@ -251,7 +292,7 @@ ${textoModelo.slice(0, 60_000)}
 """
 
 Responda SOMENTE com JSON:
-{ "titulo": "string", "subtitulo": "string", "campos": [{"label":"string","value":"string"}], "destaque": {"ativo": boolean, "label":"string","value":"string","nota":"string"}, "saudacao": "string", "corpo": "string", "fechamento": "string" }`;
+{ "titulo": "string", "subtitulo": "string", "campos": [{"label":"string","value":"string"}], "destaque": {"ativo": boolean, "label":"string","value":"string","nota":"string"}, "saudacao": "string", "corpo": "string" }`;
 
   const texto = await chamarGemini({ parts: [{ text: prompt }], json: true, temperature: 0.1 });
   const j = lerJson(texto);
@@ -267,20 +308,35 @@ Responda SOMENTE com JSON:
         .filter((x) => x.label.trim())
     : undefined;
   const dj = j.destaque && typeof j.destaque === "object" ? (j.destaque as Record<string, unknown>) : null;
+  const base = modeloFabrica(tipo, "");
+  const permitirNormas = tipo === "comunicado" && pedidoExplicitoDeNormas(textoModelo);
+  const normalizado = normalizarDocumento(
+    {
+      ...base,
+      titulo: s(j.titulo) ?? base.titulo,
+      subtitulo: s(j.subtitulo) ?? base.subtitulo,
+      campos: campos && campos.length ? campos : base.campos,
+      destaque: dj
+        ? {
+            ativo: dj.ativo === true,
+            label: s(dj.label) ?? "Destaque",
+            value: typeof dj.value === "string" ? dj.value : "",
+            nota: typeof dj.nota === "string" ? dj.nota : "",
+          }
+        : base.destaque,
+      saudacao: s(j.saudacao) ?? base.saudacao,
+      corpo: s(j.corpo) ?? base.corpo,
+      normasSolicitadas: permitirNormas,
+    },
+    tipo,
+    { permitirNormasComunicado: permitirNormas },
+  );
   return {
-    titulo: s(j.titulo),
-    subtitulo: s(j.subtitulo),
-    campos: campos && campos.length ? campos : undefined,
-    destaque: dj
-      ? {
-          ativo: dj.ativo === true,
-          label: s(dj.label) ?? "Destaque",
-          value: typeof dj.value === "string" ? dj.value : "",
-          nota: typeof dj.nota === "string" ? dj.nota : "",
-        }
-      : undefined,
-    saudacao: s(j.saudacao),
-    corpo: s(j.corpo),
-    fechamento: s(j.fechamento),
+    titulo: normalizado.titulo,
+    subtitulo: normalizado.subtitulo,
+    campos: normalizado.campos,
+    destaque: normalizado.destaque,
+    saudacao: normalizado.saudacao,
+    corpo: normalizado.corpo,
   };
 }

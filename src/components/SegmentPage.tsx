@@ -7,8 +7,9 @@ import { getIaConfig } from "@/lib/config";
 import { BancoIndisponivel } from "./BancoIndisponivel";
 import { dataPorExtenso } from "@/lib/format";
 import { modeloFabrica, resolverModelo } from "@/lib/modelos";
+import { normalizarDocumento } from "@/lib/padrao-documento";
 import type { StatusDoc, TipoDoc } from "@/lib/types";
-import { SEGMENTOS, isStatus, sanitizeDoc, unidadeDe } from "@/lib/types";
+import { SEGMENTOS, assuntoDe, isStatus, sanitizeDoc, unidadeDe } from "@/lib/types";
 import { Hero } from "./Hero";
 import { SegmentWorkspace } from "./SegmentWorkspace";
 import type { SalvoItem } from "./SegmentWorkspace";
@@ -79,18 +80,18 @@ export async function SegmentPage({
         id: row.id,
         condominioId: row.condominioId,
         status: (isStatus(row.status) ? row.status : "rascunho") as StatusDoc,
-        dados: sanitizeDoc(row.dados, modeloFabrica(tipo, hoje)),
+        dados: normalizarDocumento(sanitizeDoc(row.dados, modeloFabrica(tipo, hoje)), tipo),
       }
     : null;
 
   const itens: SalvoItem[] = salvos.map((s) => {
-    const d = sanitizeDoc(s.dados, modeloFabrica(tipo, hoje));
+    const d = normalizarDocumento(sanitizeDoc(s.dados, modeloFabrica(tipo, hoje)), tipo);
     return {
       id: s.id,
       numero: s.numero,
       condominioId: s.condominioId,
       condominioNome: s.condominioNome,
-      assunto: s.assunto,
+      assunto: assuntoDe(d),
       unidade: unidadeDe(d),
       valor: d.destaque.ativo ? d.destaque.value : "",
       status: isStatus(s.status) ? s.status : "rascunho",

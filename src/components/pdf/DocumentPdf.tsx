@@ -1,5 +1,19 @@
 import type React from "react";
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Image, Link, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import {
+  A4,
+  FOTO_ALTURA_MAX_MM,
+  FOTO_GAP_MM,
+  LARGURA_UTIL_PT,
+  MM_PARA_PT,
+  linhasDeFotos,
+} from "@/lib/documento-layout";
+import { dimensoesImagem } from "@/lib/imagem-dimensoes";
+import {
+  CANAIS_COMUNICACAO,
+  FECHAMENTO_PADRAO,
+  NOME_GERENCIAL,
+} from "@/lib/padrao-documento";
 import type { DocData } from "@/lib/types";
 
 const C = {
@@ -13,21 +27,23 @@ const C = {
   muted: "#6b6b7d",
 };
 
+const MARGEM = A4.margemMm * MM_PARA_PT;
+const GAP_FOTO = FOTO_GAP_MM * MM_PARA_PT;
+
 const s = StyleSheet.create({
   page: {
-    paddingTop: 34,
-    paddingBottom: 66,
-    paddingHorizontal: 46,
+    paddingTop: MARGEM,
+    paddingBottom: MARGEM + 18,
+    paddingHorizontal: MARGEM,
     fontFamily: "Helvetica",
     fontSize: 10,
     color: C.text,
   },
-  header: { flexDirection: "row", alignItems: "flex-start", minHeight: 70 },
-  headerLeft: { width: "30%", paddingTop: 4 },
-  logo: { width: 140, height: 26, objectFit: "contain" },
-  headerCenter: { width: "40%", alignItems: "center", paddingTop: 4 },
-  headerRight: { width: "30%", alignItems: "flex-end", justifyContent: "flex-start" },
-  condoLogo: { width: 125, height: 52, objectFit: "contain" },
+  header: { flexDirection: "row", alignItems: "center", minHeight: 66 },
+  headerLeft: { width: "34%", height: 66 },
+  logo: { width: "100%", height: 66, objectFit: "contain" },
+  headerCenter: { width: "32%", alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
+  headerRight: { width: "34%", height: 66 },
   numero: { fontFamily: "Helvetica-Bold", fontSize: 9.5, color: C.ink, textAlign: "center" },
   localData: { fontSize: 8.5, color: C.muted, marginTop: 4, textAlign: "center" },
   bar: { flexDirection: "row", marginTop: 10, height: 3 },
@@ -37,12 +53,12 @@ const s = StyleSheet.create({
     fontFamily: "Helvetica-Bold",
     fontSize: 16,
     color: C.ink,
-    marginTop: 22,
+    marginTop: 18,
     letterSpacing: 0.6,
   },
   subtitulo: { fontSize: 9.5, color: C.muted, marginTop: 3 },
   condo: {
-    marginTop: 14,
+    marginTop: 12,
     backgroundColor: C.paper,
     borderLeftWidth: 3,
     borderLeftColor: C.brand,
@@ -57,7 +73,6 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
   },
   condoNome: { fontFamily: "Helvetica-Bold", fontSize: 11, color: C.ink, marginTop: 2 },
-  condoInfo: { fontSize: 8.5, color: C.muted, marginTop: 1 },
   tabela: { marginTop: 12, borderWidth: 0.75, borderColor: C.line },
   linha: { flexDirection: "row", borderBottomWidth: 0.75, borderBottomColor: C.line },
   linhaUltima: { flexDirection: "row" },
@@ -94,8 +109,8 @@ const s = StyleSheet.create({
   },
   destaqueValor: { fontFamily: "Helvetica-Bold", fontSize: 18, color: C.ink, marginTop: 2 },
   destaqueNota: { fontSize: 8.5, color: C.muted, maxWidth: 220, textAlign: "right" },
-  saudacao: { marginTop: 16, fontSize: 10.5 },
-  galeria: { marginTop: 14 },
+  saudacao: { marginTop: 14, fontSize: 10.5 },
+  galeria: { marginTop: 12 },
   galeriaTitulo: {
     fontFamily: "Helvetica-Bold",
     fontSize: 7.5,
@@ -104,8 +119,8 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 6,
   },
-  galeriaGrade: { flexDirection: "row", flexWrap: "wrap", gap: 16 },
-  foto: { marginBottom: 12, alignItems: "center" },
+  galeriaLinha: { flexDirection: "row", gap: GAP_FOTO, marginBottom: GAP_FOTO },
+  foto: { alignItems: "center" },
   fotoLegenda: { fontSize: 8.5, color: C.muted, marginTop: 3, textAlign: "center" },
   paragrafo: { fontSize: 10, lineHeight: 1.5, textAlign: "justify", marginBottom: 6 },
   secao: {
@@ -120,17 +135,25 @@ const s = StyleSheet.create({
   marcadorPonto: { width: 10, fontSize: 10, lineHeight: 1.5 },
   marcadorTexto: { flex: 1, fontSize: 10, lineHeight: 1.5 },
   fechamento: { marginTop: 12, fontSize: 10 },
-  dataLocal: { marginTop: 10, fontSize: 10 },
-  assinaturas: { marginTop: 34, flexDirection: "row", flexWrap: "wrap" },
-  assinatura: { paddingHorizontal: 8, marginBottom: 22 },
-  assinaturaLinha: { borderTopWidth: 0.75, borderTopColor: C.ink, marginTop: 30, paddingTop: 4 },
-  assinaturaNome: { fontFamily: "Helvetica-Bold", fontSize: 9, color: C.ink, textAlign: "center" },
-  assinaturaCargo: { fontSize: 8, color: C.muted, textAlign: "center", marginTop: 1 },
+  contatos: { marginTop: 12, fontSize: 9, lineHeight: 1.5, color: C.muted },
+  contatosTitulo: {
+    fontFamily: "Helvetica-Bold",
+    fontSize: 7.5,
+    letterSpacing: 0.8,
+    color: C.muted,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  contatoRotulo: { fontFamily: "Helvetica-Bold", color: C.ink },
+  contatoLink: { color: C.ink, textDecoration: "underline" },
+  assinatura: { marginTop: 24, alignItems: "center" },
+  assinaturaLinha: { width: 320, borderTopWidth: 0.75, borderTopColor: C.ink, paddingTop: 4 },
+  assinaturaNome: { fontFamily: "Helvetica-Bold", fontSize: 10, color: C.ink, textAlign: "center" },
   rodape: {
     position: "absolute",
-    left: 46,
-    right: 46,
-    bottom: 26,
+    left: MARGEM,
+    right: MARGEM,
+    bottom: 24,
     borderTopWidth: 0.75,
     borderTopColor: C.line,
     paddingTop: 6,
@@ -141,43 +164,10 @@ const s = StyleSheet.create({
   rodapePagina: { fontSize: 7.5, color: C.muted },
 });
 
-/** Proporção da imagem para caber na caixa sem distorcer nem estourar a página. */
-function proporcao(dataUrl: string): { largura: number; altura: number } {
-  // data URL de JPEG: lê o marcador SOF para extrair as dimensões.
-  try {
-    const bin = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
-    let i = 2;
-    while (i < bin.length - 9) {
-      if (bin.charCodeAt(i) !== 0xff) {
-        i++;
-        continue;
-      }
-      const marcador = bin.charCodeAt(i + 1);
-      if (
-        marcador >= 0xc0 &&
-        marcador <= 0xcf &&
-        marcador !== 0xc4 &&
-        marcador !== 0xc8 &&
-        marcador !== 0xcc
-      ) {
-        const altura = (bin.charCodeAt(i + 5) << 8) | bin.charCodeAt(i + 6);
-        const largura = (bin.charCodeAt(i + 7) << 8) | bin.charCodeAt(i + 8);
-        if (largura > 0 && altura > 0) return { largura, altura };
-      }
-      i += 2 + ((bin.charCodeAt(i + 2) << 8) | bin.charCodeAt(i + 3));
-    }
-  } catch {
-    /* usa a proporção padrão */
-  }
-  return { largura: 4, altura: 3 };
-}
-
 function Galeria({ doc }: { doc: DocData }) {
   if (doc.imagens.length === 0) return null;
-
-  const LARGURA_TEXTO = 503; // A4 (595 pt) menos as margens laterais de 46
-  const COLUNA = (LARGURA_TEXTO - 16) / 2;
-  const MAX_ALTURA = 230;
+  const coluna = (LARGURA_UTIL_PT - GAP_FOTO) / 2;
+  const alturaMax = FOTO_ALTURA_MAX_MM * MM_PARA_PT;
 
   return (
     <View style={s.galeria}>
@@ -186,35 +176,34 @@ function Galeria({ doc }: { doc: DocData }) {
           {doc.galeria.titulo}
         </Text>
       ) : null}
-      <View style={s.galeriaGrade}>
-        {doc.imagens.map((img, idx) => {
-          const { largura, altura } = proporcao(img.dataUrl);
-          const caixaMax = img.largura === "meia" ? COLUNA : LARGURA_TEXTO;
-          const escala = Math.min(caixaMax / largura, MAX_ALTURA / altura);
-          return (
-            <View
-              key={img.id}
-              style={[
-                s.foto,
-                img.largura === "meia" ? { width: COLUNA } : { width: LARGURA_TEXTO },
-              ]}
-              wrap={false}
-            >
-              <Image
-                src={img.dataUrl}
-                style={{
-                  width: Math.round(largura * escala),
-                  height: Math.round(altura * escala),
-                  objectFit: "contain",
-                }}
-              />
-              <Text style={s.fotoLegenda}>
-                {img.legenda.trim() ? `Foto ${idx + 1} — ${img.legenda}` : `Foto ${idx + 1}`}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+      {linhasDeFotos(doc.imagens).map((linha, linhaIdx) => (
+        <View key={linhaIdx} style={s.galeriaLinha} wrap={false}>
+          {linha.map((img) => {
+            const idx = doc.imagens.findIndex((x) => x.id === img.id);
+            const { largura, altura } = dimensoesImagem(img.dataUrl);
+            const caixa = img.largura === "meia" ? coluna : LARGURA_UTIL_PT;
+            const escala = Math.min(caixa / largura, alturaMax / altura);
+            return (
+              <View
+                key={img.id}
+                style={[s.foto, { width: img.largura === "meia" ? coluna : LARGURA_UTIL_PT }]}
+              >
+                <Image
+                  src={img.dataUrl}
+                  style={{
+                    width: Math.round(largura * escala),
+                    height: Math.round(altura * escala),
+                    objectFit: "contain",
+                  }}
+                />
+                <Text style={s.fotoLegenda}>
+                  {img.legenda.trim() ? `Foto ${idx + 1} — ${img.legenda}` : `Foto ${idx + 1}`}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
     </View>
   );
 }
@@ -248,7 +237,6 @@ function Corpo({ texto }: { texto: string }) {
       continue;
     }
     if (ehSecao(l)) {
-      // O título nunca fica sozinho no fim da página: segue junto com a linha seguinte.
       const prox = linhas[i + 1];
       if (prox && !ehSecao(prox)) {
         itens.push(
@@ -281,21 +269,17 @@ export function DocumentPdf({
   logoUrl: string;
   condoLogoUrl?: string | null;
 }) {
-  const n = Math.max(doc.assinaturas.length, 1);
-  const larguraAss = `${100 / Math.min(n, 3)}%`;
-  const localData = [doc.local, doc.data].filter((x) => x.trim()).join(", ");
-
   return (
     <Document
       title={`${doc.titulo}${doc.numero ? ` ${doc.numero}` : ""}`}
-      author="Gerencial · Governança Condominial"
+      author={NOME_GERENCIAL}
       subject={doc.condominio}
       creator="Gerencial"
     >
       <Page size="A4" style={s.page}>
-        <View style={s.header}>
+        <View style={s.header} wrap={false}>
           <View style={s.headerLeft}>
-            <Image src={logoUrl} style={s.logo} />
+            <Image src={logoUrl} style={[s.logo, { objectPosition: "left center" }]} />
           </View>
           <View style={s.headerCenter}>
             {doc.numero.trim() ? <Text style={s.numero}>Nº {doc.numero}</Text> : null}
@@ -303,7 +287,9 @@ export function DocumentPdf({
             {doc.data.trim() ? <Text style={s.localData}>{doc.data}</Text> : null}
           </View>
           <View style={s.headerRight}>
-            {condoLogoUrl ? <Image src={condoLogoUrl} style={s.condoLogo} /> : null}
+            {condoLogoUrl ? (
+              <Image src={condoLogoUrl} style={[s.logo, { objectPosition: "right center" }]} />
+            ) : null}
           </View>
         </View>
         <View style={s.bar}>
@@ -314,13 +300,10 @@ export function DocumentPdf({
         <Text style={s.titulo}>{doc.titulo}</Text>
         {doc.subtitulo.trim() ? <Text style={s.subtitulo}>{doc.subtitulo}</Text> : null}
 
-        {doc.condominio.trim() || doc.condominioInfo.trim() ? (
+        {doc.condominio.trim() ? (
           <View style={s.condo} wrap={false}>
             <Text style={s.microLabel}>Condomínio</Text>
-            {doc.condominio.trim() ? <Text style={s.condoNome}>{doc.condominio}</Text> : null}
-            {doc.condominioInfo.trim() ? (
-              <Text style={s.condoInfo}>{doc.condominioInfo}</Text>
-            ) : null}
+            <Text style={s.condoNome}>{doc.condominio}</Text>
           </View>
         ) : null}
 
@@ -351,31 +334,37 @@ export function DocumentPdf({
           </View>
         ) : null}
 
-        {doc.galeria.posicao === "inicio" ? <Galeria doc={doc} /> : null}
-
         {doc.saudacao.trim() ? <Text style={s.saudacao}>{doc.saudacao}</Text> : null}
         <View style={{ marginTop: 8 }}>
           <Corpo texto={doc.corpo} />
         </View>
 
-        {doc.galeria.posicao === "fim" ? <Galeria doc={doc} /> : null}
+        {/* Fotos sempre após o texto; cada linha fica junto da legenda. */}
+        <Galeria doc={doc} />
 
+        {/* Fechamento + canais + assinatura única não se separam entre páginas. */}
         <View wrap={false}>
-        {doc.fechamento.trim() ? <Text style={s.fechamento}>{doc.fechamento}</Text> : null}
-          {localData ? <Text style={s.dataLocal}>{localData}.</Text> : null}
-
-          {doc.assinaturas.length > 0 ? (
-            <View style={s.assinaturas} wrap={false}>
-              {doc.assinaturas.map((a) => (
-                <View key={a.id} style={[s.assinatura, { width: larguraAss }]}>
-                  <View style={s.assinaturaLinha}>
-                    <Text style={s.assinaturaNome}>{a.nome}</Text>
-                    {a.cargo.trim() ? <Text style={s.assinaturaCargo}>{a.cargo}</Text> : null}
-                  </View>
-                </View>
-              ))}
+          <Text style={s.fechamento}>{FECHAMENTO_PADRAO}</Text>
+          <View style={s.contatos}>
+            <Text style={s.contatosTitulo}>Canais de comunicação</Text>
+            {CANAIS_COMUNICACAO.map((canal) => (
+              <Text key={canal.rotulo}>
+                <Text style={s.contatoRotulo}>{canal.rotulo}: </Text>
+                {"href" in canal && canal.href ? (
+                  <Link src={canal.href} style={s.contatoLink}>
+                    {canal.valor}
+                  </Link>
+                ) : (
+                  canal.valor
+                )}
+              </Text>
+            ))}
+          </View>
+          <View style={s.assinatura}>
+            <View style={s.assinaturaLinha}>
+              <Text style={s.assinaturaNome}>{NOME_GERENCIAL}</Text>
             </View>
-          ) : null}
+          </View>
         </View>
 
         <View style={s.rodape} fixed>

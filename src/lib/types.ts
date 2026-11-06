@@ -41,6 +41,8 @@ export type DocData = {
   /** Fotos anexadas (até 6). */
   imagens: ImagemDoc[];
   galeria: Galeria;
+  /** Comunicado: referências normativas só quando solicitadas expressamente. */
+  normasSolicitadas: boolean;
 };
 
 export type CampoIA = {
@@ -215,6 +217,7 @@ export function sanitizeDoc(raw: unknown, base: DocData): DocData {
       titulo: str(g.titulo, base.galeria.titulo),
       posicao: g.posicao === "inicio" ? ("inicio" as const) : ("fim" as const),
     },
+    normasSolicitadas: r.normasSolicitadas === true || base.normasSolicitadas,
   };
 }
 

@@ -3,8 +3,9 @@ import { db } from "@/db";
 import { documentosEmitidos } from "@/db/schema";
 import { dataCurta } from "./format";
 import { modeloFabrica } from "./modelos";
+import { normalizarDocumento } from "./padrao-documento";
 import type { DocData } from "./types";
-import { destinatarioDe, mesmaUnidade, mesmoAssunto, sanitizeDoc, unidadeDe } from "./types";
+import { assuntoDe, destinatarioDe, mesmaUnidade, mesmoAssunto, sanitizeDoc, unidadeDe } from "./types";
 
 export type HistoricoItem = {
   id: string;
@@ -56,12 +57,12 @@ export async function buscarHistorico(opts: BuscaHistorico): Promise<HistoricoIt
   for (const r of rows) {
     if (r.tipo !== "notificacao" && r.tipo !== "multa") continue;
     if (excluirId && r.id === excluirId) continue;
-    const d: DocData = sanitizeDoc(r.dados, modeloFabrica(r.tipo, ""));
+    const d: DocData = normalizarDocumento(sanitizeDoc(r.dados, modeloFabrica(r.tipo, "")), r.tipo);
     const unid = unidadeDe(d);
     if (unidade?.trim() && !unid) continue;
     if (unidade?.trim() && !mesmaUnidade(unid, unidade)) continue;
 
-    const assuntoItem = r.assunto || d.subtitulo || "";
+    const assuntoItem = assuntoDe(d) || r.assunto || "";
     itens.push({
       id: r.id,
       tipo: r.tipo,

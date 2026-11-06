@@ -134,6 +134,83 @@
     margin-bottom: 0.3rem;
   }
 
+  /* Folha A4: 210 × 297 mm, margens de 15 mm e mesma área útil do PDF. */
+  .document-paper-frame {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .document-paper {
+    container-type: inline-size;
+    container-name: document-paper;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 15mm;
+    flex-shrink: 0;
+    font-size: 10pt;
+    line-height: 1.5;
+  }
+  .document-header {
+    display: grid;
+    grid-template-columns: 34% 32% 34%;
+    align-items: center;
+    column-gap: 0;
+    row-gap: 8px;
+    min-height: 88px;
+  }
+  .document-header-logo {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 88px;
+    object-fit: contain;
+  }
+  .document-photo-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .document-photo {
+    max-height: 60mm;
+    max-width: 100%;
+    width: auto;
+    object-fit: contain;
+  }
+  .document-signature-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-only {
+    display: none;
+  }
+  .document-header-identity {
+    min-width: 0;
+    text-align: center;
+  }
+  .document-header-controls {
+    grid-column: 3;
+    justify-self: end;
+    min-width: 0;
+  }
+
+  /* Quando a folha fica estreita, as logos continuam lado a lado e os dados
+     ficam centralizados abaixo delas, sem comprimir nem esconder o texto. */
+  @container document-paper (max-width: 480px) {
+    .document-header {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .document-header-logo {
+      height: 76px;
+    }
+    .document-header-identity {
+      grid-column: 1 / -1;
+      grid-row: 3;
+    }
+    .document-header-controls {
+      grid-column: 2;
+      grid-row: 2;
+    }
+  }
+
   /* Campos editáveis dentro da folha do documento */
   .inline-field {
     display: block;
@@ -174,11 +251,33 @@
   }
 }
 
+@page {
+  size: A4 portrait;
+  margin: 15mm;
+}
+
 @media print {
   .no-print {
     display: none !important;
   }
+  .print-only {
+    display: block;
+  }
   body {
     background: #fff !important;
+  }
+  .document-paper-frame {
+    overflow: visible;
+  }
+  .document-paper {
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+  .document-body {
+    orphans: 3;
+    widows: 3;
   }
 }

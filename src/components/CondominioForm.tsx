@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { MAX_BYTES_LOGO, prepararLogo } from "@/lib/imagens";
 import { Icon, Spinner } from "./Icon";
 
 export type CondominioValores = {
@@ -46,7 +45,6 @@ export function CondominioForm({
   const [logoAtual, setLogoAtual] = useState<string | null>(logoUrl ?? null);
   const [logoArquivo, setLogoArquivo] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [arrastandoLogo, setArrastandoLogo] = useState(false);
 
   const set = (k: keyof CondominioValores) => (e: { target: { value: string } }) =>
     setV((s) => ({ ...s, [k]: e.target.value }));
@@ -87,30 +85,15 @@ export function CondominioForm({
     }
   }
 
-  async function escolherLogo(file: File | undefined) {
+  function escolherLogo(file: File | undefined) {
     if (!file) return;
-    setMsg(null);
-    if (file.size > MAX_BYTES_LOGO) {
-      setMsg({ ok: false, texto: "A logo deve ter até 5 MB." });
+    if (file.size > 3 * 1024 * 1024) {
+      setMsg({ ok: false, texto: "A logo deve ter até 3 MB." });
       return;
     }
-    try {
-      let arquivo = file;
-      // A API guarda PNG/JPG: converte WEBP (ou arquivos grandes) antes de enviar.
-      if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 3 * 1024 * 1024) {
-        const dataUrl = await prepararLogo(file);
-        const blob = await (await fetch(dataUrl)).blob();
-        const extensao = blob.type === "image/png" ? "png" : "jpg";
-        arquivo = new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "logo"}.${extensao}`, {
-          type: blob.type,
-        });
-      }
-      setLogoArquivo(arquivo);
-      setLogoPreview(URL.createObjectURL(arquivo));
-      setMsg({ ok: true, texto: "Logo selecionada. Ela será enviada ao salvar o condomínio." });
-    } catch (e) {
-      setMsg({ ok: false, texto: e instanceof Error ? e.message : "Não foi possível usar esta imagem." });
-    }
+    setLogoArquivo(file);
+    setLogoPreview(URL.createObjectURL(file));
+    setMsg({ ok: true, texto: "Logo selecionada. Ela será enviada ao salvar o condomínio." });
   }
 
   async function enviarLogo(condoId: string): Promise<boolean> {
@@ -233,35 +216,12 @@ export function CondominioForm({
       </div>
 
       {/* Logo do condomínio */}
-      <div
-        onDragOver={(e) => {
-          if (!Array.from(e.dataTransfer.types ?? []).includes("Files")) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
-          setArrastandoLogo(true);
-        }}
-        onDragLeave={() => setArrastandoLogo(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setArrastandoLogo(false);
-          const arquivo = e.dataTransfer.files?.[0];
-          if (arquivo) void escolherLogo(arquivo);
-        }}
-        className={`rounded-xl border-2 border-dashed bg-paper/50 p-3 transition sm:col-span-6 ${
-          arrastandoLogo ? "border-brand bg-brand-soft" : "border-line"
-        }`}
-      >
+      <div className="rounded-xl border border-line bg-paper/50 p-3 sm:col-span-6">
         <div className="flex flex-wrap items-center gap-4">
-          <div
-            className={`grid h-16 w-28 shrink-0 place-items-center overflow-hidden rounded-lg border bg-white ${
-              arrastandoLogo ? "border-brand" : "border-line"
-            }`}
-          >
+          <div className="grid h-16 w-28 shrink-0 place-items-center overflow-hidden rounded-lg border border-line bg-white">
             {preview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={preview} alt="Logo do condomínio" className="max-h-14 max-w-[104px] object-contain" />
-            ) : arrastandoLogo ? (
-              <Icon name="upload" className="h-6 w-6 text-brand-dark" />
             ) : (
               <Icon name="building" className="h-6 w-6 text-slate-300" />
             )}
@@ -269,9 +229,8 @@ export function CondominioForm({
           <div className="min-w-[220px] flex-1">
             <p className="label !mb-1">Logo do condomínio</p>
             <p className="text-[11.5px] leading-snug text-slate-500">
-              Arraste a imagem para esta área ou clique em “Enviar logo”. Aceita PNG, JPG ou WEBP
-              (até 5 MB). Entra automaticamente no cabeçalho das notificações, multas e comunicados
-              (tela e PDF) deste condomínio.
+              PNG ou JPG, até 3 MB. Entra automaticamente no cabeçalho das notificações, multas e
+              comunicados (tela e PDF) deste condomínio.
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <label className="btn btn-ghost btn-sm">
@@ -279,10 +238,10 @@ export function CondominioForm({
                 {preview ? "Trocar imagem" : "Enviar logo"}
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg"
                   className="hidden"
                   onChange={(e) => {
-                    void escolherLogo(e.target.files?.[0]);
+                    escolherLogo(e.target.files?.[0]);
                     e.target.value = "";
                   }}
                 />

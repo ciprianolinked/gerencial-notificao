@@ -25,46 +25,66 @@ export function aceitaImagem(file: File): boolean {
   return ["image/png", "image/jpeg", "image/webp"].includes(file.type);
 }
 
-export const MAX_BYTES_LOGO = 5 * 1024 * 1024;
-const MAX_LOGO_PX = 900;
-
 /**
- * Prepara a logo do cabeçalho: mantém PNG pequeno intacto (transparência) e
- * converte JPG/WEBP ou arquivos grandes em PNG/JPEG (até 900 px) para o PDF.
+ * Converte a logo do condomínio para PNG (formato que o PDF embute sem
+ * dependências extras) e limita o tamanho. Aceita PNG, JPG, WEBP e SVG —
+ * SVG e WEBP são convertidos no navegador, então a rota sempre recebe PNG.
  */
-export async function prepararLogo(file: File): Promise<string> {
-  if (!aceitaImagem(file)) {
-    throw new Error("Formato não aceito. Arraste um arquivo PNG, JPG ou WEBP.");
-  }
-  if (file.size > MAX_BYTES_LOGO) {
-    throw new Error("A logo deve ter até 5 MB.");
+export async function prepararLogo(file: File): Promise<File> {
+  const TIPOS_ACEITOS = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+  if (!TIPOS_ACEITOS.includes(file.type)) {
+    throw new Error("Formato não aceito. Use PNG, JPG, WEBP ou SVG.");
   }
 
-  if (file.type === "image/png" && file.size <= 2_000_000) {
-    return await new Promise<string>((resolve, reject) => {
-      const leitor = new FileReader();
-      leitor.onload = () =>
-        typeof leitor.result === "string" ? resolve(leitor.result) : reject(new Error("Formato inválido"));
-      leitor.onerror = () => reject(new Error("Falha ao ler a imagem"));
-      leitor.readAsDataURL(file);
+  const MAX = 1024;
+
+  const carregar = (url: string, larguraForcada?: number, alturaForcada?: number) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Não foi possível ler a imagem"));
+      if (larguraForcada && alturaForcada) {
+        img.width = larguraForcada;
+        img.height = alturaForcada;
+      }
+      img.src = url;
     });
+
+  let img: HTMLImageElement;
+  if (file.type === "image/svg+xml") {
+    // SVG pode não ter tamanho intrínseco: usa o viewBox (ou um padrão quadrado).
+    const texto = await file.text();
+    const vb =
+      /viewBox\s*=\s*["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)\s*["']/i.exec(texto);
+    const w = /width\s*=\s*["']\s*([\d.]+)/i.exec(texto);
+    const h = /height\s*=\s*["']\s*([\d.]+)/i.exec(texto);
+    const largura = Math.round(Number(vb?.[1] ?? w?.[1] ?? 512)) || 512;
+    const altura = Math.round(Number(vb?.[2] ?? h?.[2] ?? 512)) || 512;
+    const url = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(texto)))}`;
+    img = await carregar(url, largura, altura);
+  } else {
+    img = await carregar(URL.createObjectURL(file));
   }
 
-  const bitmap = await createImageBitmap(file);
-  const escala = Math.min(1, MAX_LOGO_PX / bitmap.width, MAX_LOGO_PX / bitmap.height);
-  const largura = Math.max(1, Math.round(bitmap.width * escala));
-  const altura = Math.max(1, Math.round(bitmap.height * escala));
+  const escala = Math.min(1, MAX / img.naturalWidth || 1, MAX / img.naturalHeight || 1);
+  const largura = Math.max(1, Math.round(img.naturalWidth * escala));
+  const altura = Math.max(1, Math.round(img.naturalHeight * escala));
+
   const canvas = document.createElement("canvas");
   canvas.width = largura;
   canvas.height = altura;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Não foi possível processar a imagem.");
-  ctx.drawImage(bitmap, 0, 0, largura, altura);
-  bitmap.close?.();
+  ctx.clearRect(0, 0, largura, altura);
+  ctx.drawImage(img, 0, 0, largura, altura);
 
-  const png = canvas.toDataURL("image/png");
-  if (bytesDeDataUrl(png) <= 2_000_000) return png;
-  return canvas.toDataURL("image/jpeg", 0.9);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/png"),
+  );
+  if (!blob) throw new Error("Não foi possível converter a imagem.");
+
+  const nome = file.name.replace(/\.[^.]+$/, "") || "logo";
+  return new File([blob], `${nome}.png`, { type: "image/png" });
 }
 
 export function bytesDeDataUrl(dataUrl: string): number {

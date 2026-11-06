@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { condominioDocumentos, condominios, documentosEmitidos } from "@/db/schema";
 import { BancoIndisponivel } from "@/components/BancoIndisponivel";
 import { CondominioForm } from "@/components/CondominioForm";
+import { LogoUpload } from "@/components/LogoUpload";
 import { verificarBanco } from "@/lib/banco";
 import { DocumentosManager } from "@/components/DocumentosManager";
 import { Hero } from "@/components/Hero";
@@ -100,6 +101,11 @@ export default async function CondominioPage({ params }: { params: Promise<{ id:
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start">
         <div className="space-y-5">
+          <section className="card p-4 sm:p-5">
+            <h2 className="font-display mb-3 text-[18px] text-ink">Identidade do condomínio</h2>
+            <LogoUpload condominioId={id} temLogo={!!condo.logoMime} />
+          </section>
+
           <section className="card p-4 sm:p-5">
             <h2 className="font-display text-[18px] text-ink">Documentação do condomínio</h2>
             <p className="mb-4 text-[12px] text-slate-500">

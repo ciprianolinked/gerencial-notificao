@@ -4,6 +4,7 @@ import { documentosEmitidos } from "@/db/schema";
 import { ehUuid, erro, erroDeExcecao } from "@/lib/api";
 import { assuntoDe, proximoNumero } from "@/lib/emitidos";
 import { modeloFabrica } from "@/lib/modelos";
+import { normalizarDocumento } from "@/lib/padrao-documento";
 import { isStatus, isTipo, sanitizeDoc } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
     if (!body || !isTipo(body.tipo)) return erro("Tipo de documento inválido.");
     const tipo = body.tipo;
 
-    const dados = sanitizeDoc(body.dados, modeloFabrica(tipo, ""));
+    const dados = normalizarDocumento(sanitizeDoc(body.dados, modeloFabrica(tipo, "")), tipo);
     if (!dados.numero.trim()) dados.numero = await proximoNumero(tipo);
 
     const status = isStatus(body.status) ? body.status : "rascunho";
